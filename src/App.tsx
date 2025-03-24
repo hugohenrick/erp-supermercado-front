@@ -9,6 +9,7 @@ import BranchFormPage from './pages/branches/BranchFormPage';
 import CustomerListPage from './pages/customers/CustomerListPage';
 import CustomerFormPage from './pages/customers/CustomerFormPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { BranchProvider } from './context/BranchContext';
 
 // Componente para rotas protegidas
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -24,66 +25,68 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <Routes>
-        {/* Rotas públicas */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/register-tenant" element={<TenantRegisterPage />} />
-        
-        {/* Rotas protegidas */}
-        <Route path="/" element={
-          <ProtectedRoute>
-            <DashboardPage />
-          </ProtectedRoute>
-        } />
-        <Route path="/dashboard/*" element={
-          <ProtectedRoute>
-            <DashboardPage />
-          </ProtectedRoute>
-        } />
-        
-        {/* Rotas de Filiais */}
-        <Route path="/branches" element={
-          <ProtectedRoute>
-            <BranchListPage />
-          </ProtectedRoute>
-        } />
-        <Route path="/branches/new" element={
-          <ProtectedRoute>
-            <BranchFormPage />
-          </ProtectedRoute>
-        } />
-        <Route path="/branches/edit/:id" element={
-          <ProtectedRoute>
-            <BranchFormPage />
-          </ProtectedRoute>
-        } />
-        
-        {/* Rotas de Clientes */}
-        <Route path="/customers" element={
-          <ProtectedRoute>
-            <CustomerListPage />
-          </ProtectedRoute>
-        } />
-        <Route path="/customers/new" element={
-          <ProtectedRoute>
-            <CustomerFormPage />
-          </ProtectedRoute>
-        } />
-        <Route path="/customers/edit/:id" element={
-          <ProtectedRoute>
-            <CustomerFormPage />
-          </ProtectedRoute>
-        } />
-        <Route path="/customers/view/:id" element={
-          <ProtectedRoute>
-            <CustomerFormPage viewOnly={true} />
-          </ProtectedRoute>
-        } />
-        
-        {/* Redirecionar para login se a rota não existir */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+      <BranchProvider>
+        <Routes>
+          {/* Rotas públicas */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/register-tenant" element={<TenantRegisterPage />} />
+          
+          {/* Rotas protegidas */}
+          <Route path="/" element={
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/dashboard/*" element={
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          } />
+          
+          {/* Rotas de Filiais */}
+          <Route path="/branches" element={
+            <ProtectedRoute>
+              <BranchListPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/branches/new" element={
+            <ProtectedRoute>
+              <BranchFormPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/branches/edit/:id" element={
+            <ProtectedRoute>
+              <BranchFormPage />
+            </ProtectedRoute>
+          } />
+          
+          {/* Rotas de Clientes */}
+          <Route path="/customers" element={
+            <ProtectedRoute>
+              <CustomerListPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/customers/new" element={
+            <ProtectedRoute>
+              <CustomerFormPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/customers/edit/:id" element={
+            <ProtectedRoute>
+              <CustomerFormPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/customers/view/:id" element={
+            <ProtectedRoute>
+              <CustomerFormPage viewOnly={true} />
+            </ProtectedRoute>
+          } />
+          
+          {/* Redirecionar para login se a rota não existir */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </BranchProvider>
     </AuthProvider>
   );
 };

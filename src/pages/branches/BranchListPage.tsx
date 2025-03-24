@@ -47,11 +47,13 @@ import DeleteConfirmDialog from '../../components/common/DeleteConfirmDialog';
 import { formatFullAddress, formatBranchType, formatBranchStatus } from '../../utils/formatUtils';
 import { Link as RouterLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useBranch } from '../../context/BranchContext';
 
 const BranchListPage: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
+  const { refreshBranches, setActiveBranch, activeBranch } = useBranch();
   
   // Estados
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -128,6 +130,8 @@ const BranchListPage: React.FC = () => {
       const result = await branchService.getBranches(page, rowsPerPage, debouncedSearchTerm);
       setBranches(result.content);
       setTotalItems(result.totalElements);
+      
+      // Removemos a chamada para refreshBranches aqui para evitar o loop infinito
     } catch (error) {
       console.error('Erro ao carregar filiais:', error);
       setError('Não foi possível carregar as filiais. Tente novamente mais tarde.');
@@ -136,12 +140,20 @@ const BranchListPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, rowsPerPage, debouncedSearchTerm]);
+  }, [page, rowsPerPage, debouncedSearchTerm]); // Removemos refreshBranches das dependências
   
   // Efeito para carregar filiais quando a página é carregada ou quando os parâmetros mudam
   useEffect(() => {
     fetchBranches();
   }, [fetchBranches]);
+  
+  // Efeito separado para atualizar o contexto global quando necessário
+  useEffect(() => {
+    // Só executamos essa atualização no primeiro carregamento da página
+    if (localStorage.getItem('tenantId')) {
+      refreshBranches();
+    }
+  }, [refreshBranches]); // Executará apenas na montagem e quando refreshBranches mudar (raramente)
   
   // Efeito para debounce da busca
   useEffect(() => {
@@ -206,11 +218,21 @@ const BranchListPage: React.FC = () => {
       await branchService.changeBranchStatus(id, newStatus);
       
       // Atualizar a lista localmente
-      setBranches(prev => 
-        prev.map(branch => 
-          branch.id === id ? { ...branch, status: newStatus } : branch
-        )
+      const updatedBranches = branches.map(branch => 
+        branch.id === id ? { ...branch, status: newStatus } : branch
       );
+      setBranches(updatedBranches);
+      
+      // Se a filial que mudou de status é a ativa, atualize-a no contexto global
+      if (activeBranch?.id === id) {
+        const updatedBranch = updatedBranches.find(b => b.id === id);
+        if (updatedBranch) {
+          setActiveBranch(updatedBranch);
+        }
+      }
+      
+      // Atualizamos apenas o contexto global aqui, sem disparar uma busca completa
+      // A atualização do contexto já está refletida localmente nos branches
       
       enqueueSnackbar(`Filial ${action}da com sucesso!`, { variant: 'success' });
     } catch (error) {
@@ -238,6 +260,20 @@ const BranchListPage: React.FC = () => {
       setBranches(prev => prev.filter(branch => branch.id !== branchToDelete.id));
       setTotalItems(prev => prev - 1);
       
+      // Se a filial excluída era a ativa, precisamos selecionar outra
+      if (activeBranch?.id === branchToDelete.id) {
+        // Selecionar outra filial da lista local para ser a ativa
+        const remainingBranches = branches.filter(branch => branch.id !== branchToDelete.id);
+        if (remainingBranches.length > 0) {
+          // Preferir a filial principal, se existir
+          const mainBranch = remainingBranches.find(branch => branch.isMain);
+          setActiveBranch(mainBranch || remainingBranches[0]);
+        } else {
+          // Se não houver mais filiais, precisamos recarregar a lista completa
+          refreshBranches();
+        }
+      }
+      
       enqueueSnackbar('Filial excluída com sucesso!', { variant: 'success' });
     } catch (error) {
       console.error('Erro ao excluir filial:', error);
@@ -251,6 +287,16 @@ const BranchListPage: React.FC = () => {
   const handleCancelDelete = () => {
     setDeleteDialogOpen(false);
     setBranchToDelete(null);
+  };
+  
+  // Adicionar função para definir a filial como ativa
+  const handleSetActiveClick = (branchId: string) => {
+    handleMenuClose();
+    const branch = branches.find(b => b.id === branchId);
+    if (branch) {
+      setActiveBranch(branch);
+      enqueueSnackbar(`${branch.name} definida como filial ativa`, { variant: 'success' });
+    }
   };
   
   // Função para filtrar branches localmente (caso não haja filtro no backend)
@@ -592,6 +638,15 @@ const BranchListPage: React.FC = () => {
         <Divider sx={{ my: 1 }} />
         {selectedBranchId && (
           <>
+            <MenuItem 
+              onClick={() => selectedBranchId && handleSetActiveClick(selectedBranchId)}
+              sx={{ color: theme.palette.primary.main }}
+              disabled={activeBranch?.id === selectedBranchId}
+            >
+              <BusinessIcon fontSize="small" sx={{ mr: 1 }} />
+              {activeBranch?.id === selectedBranchId ? 'Filial Ativa' : 'Definir como Ativa'}
+            </MenuItem>
+            <Divider sx={{ my: 1 }} />
             {branches.find(b => b.id === selectedBranchId)?.status === BranchStatus.ACTIVE ? (
               <MenuItem
                 onClick={() => 

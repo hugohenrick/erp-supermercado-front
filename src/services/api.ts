@@ -1,24 +1,19 @@
 import axios from 'axios';
 
-// Definir se deve usar um proxy CORS ou não
-const USE_CORS_PROXY = false; // Alternar para false quando o backend tiver CORS configurado
+// Definir se deve usar um proxy CORS ou não - desativado pois usamos o proxy do webpack
+const USE_CORS_PROXY = false;
 
-// URL base da API
-const API_BASE_URL = 'http://localhost:8084/api/v1';
+// URL base da API - usamos path relativo para aproveitar o proxy do webpack
+const API_BASE_URL = '/api/v1';
 
 // Cria uma instância do axios com configurações base
 const api = axios.create({
-  // Usar URL direta para o backend ou com proxy, dependendo da configuração
-  baseURL: USE_CORS_PROXY 
-    ? 'https://cors-proxy.htmldriven.com/?' + encodeURIComponent(API_BASE_URL)
-    : API_BASE_URL,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-    // Para o proxy CORS adicionar cabeçalho necessário
-    ...(USE_CORS_PROXY ? { 'x-requested-with': 'XMLHttpRequest' } : {})
   },
-  // Não usar withCredentials para evitar problemas com CORS preflight
-  // withCredentials: true
+  // Configurar para usar credenciais, isso ajuda com a autenticação
+  withCredentials: false
 });
 
 /* 
@@ -41,41 +36,23 @@ const api = axios.create({
 
 // Ajusta a URL e modifica os cabeçalhos quando o proxy CORS é usado
 const handleProxiedRequest = (config: any) => {
-  if (USE_CORS_PROXY) {
-    // Se estamos usando o proxy, precisamos ajustar como os headers são enviados
-    // Este proxy específico requer que headers adicionais específicos sejam passados de uma maneira especial
-    
-    // Salvar headers originais
-    const originalHeaders = { ...config.headers };
-    
-    // Remove headers customizados da configuração normal
-    if (originalHeaders['tenant-id']) {
-      delete config.headers['tenant-id'];
-    }
-    
-    // Adiciona os headers customizados em um formato que o proxy entenda
-    config.headers['X-Proxy-Headers'] = JSON.stringify({
-      'tenant-id': originalHeaders['tenant-id']
-    });
-    
-    // Se for uma requisição POST/PUT com dados
-    if (config.data && (config.method === 'post' || config.method === 'put')) {
-      // Alguns proxies podem precisar que os dados sejam enviados de maneira especial
-      // Dependendo do proxy usado, pode ser necessário ajustar esta lógica
-    }
-  }
-  
   return config;
 };
 
 // Variável global para armazenar o tenant-id atual
 let currentTenantId: string | null = localStorage.getItem('tenantId');
+// Variável global para armazenar o branch-id atual
+let currentBranchId: string | null = localStorage.getItem('branchId');
 
 // Listener para atualizar o tenant-id quando ele mudar no localStorage
 window.addEventListener('storage', () => {
   const newTenantId = localStorage.getItem('tenantId');
   console.log('Evento storage: Tenant ID atualizado:', newTenantId);
   currentTenantId = newTenantId;
+  
+  const newBranchId = localStorage.getItem('branchId');
+  console.log('Evento storage: Branch ID atualizado:', newBranchId);
+  currentBranchId = newBranchId;
 });
 
 // Também ouvir um evento personalizado para atualizações manuais
@@ -85,12 +62,21 @@ window.addEventListener('tenant-id-updated', () => {
   currentTenantId = newTenantId;
 });
 
+// Ouvir evento para atualizações de branch-id
+window.addEventListener('branch-id-updated', () => {
+  const newBranchId = localStorage.getItem('branchId');
+  console.log('Evento branch-id-updated: Branch ID atualizado:', newBranchId);
+  currentBranchId = newBranchId;
+});
+
 // Interceptor para adicionar token de autenticação e lidar com o proxy
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     // Usar o tenant-id da variável global, que é atualizada pelos listeners
     const tenantId = currentTenantId || localStorage.getItem('tenantId');
+    // Usar o branch-id da variável global, que é atualizada pelos listeners
+    const branchId = currentBranchId || localStorage.getItem('branchId');
     
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
@@ -99,9 +85,32 @@ api.interceptors.request.use(
     if (tenantId) {
       config.headers['tenant-id'] = tenantId;
       console.log(`Interceptor: Adicionando tenant-id (${tenantId}) ao cabeçalho da requisição para ${config.url}`);
+      
+      // Log mais detalhado para verificar o tenant-id em requisições específicas
+      if (config.url?.includes('/setup/admin') || config.url?.includes('/tenants')) {
+        console.log('REQUISIÇÃO IMPORTANTE - Detalhes completos:');
+        console.log('URL:', config.url);
+        console.log('Método:', config.method);
+        console.log('tenant-id no cabeçalho:', tenantId);
+        console.log('tenant-id atual no localStorage:', localStorage.getItem('tenantId'));
+        console.log('tenant-id atual na variável global:', currentTenantId);
+        console.log('Headers completos:', config.headers);
+        if (config.data) {
+          console.log('Payload:', JSON.stringify(config.data, null, 2));
+        }
+      }
     } else {
       console.warn(`Interceptor: tenant-id NÃO ENCONTRADO no localStorage para requisição ${config.url}`);
       console.warn('As requisições que exigem tenant-id podem falhar. Configure o tenant-id na tela de listagem de clientes.');
+    }
+    
+    // Adicionar branch-id ao cabeçalho, se disponível
+    if (branchId) {
+      config.headers['branch-id'] = branchId;
+      console.log(`Interceptor: Adicionando branch-id (${branchId}) ao cabeçalho da requisição para ${config.url}`);
+    } else {
+      console.warn(`Interceptor: branch-id NÃO ENCONTRADO no localStorage para requisição ${config.url}`);
+      console.warn('As requisições que exigem branch-id podem falhar. Selecione uma filial ativa.');
     }
     
     // Converter dados para snake_case antes de enviar ao servidor
@@ -351,6 +360,17 @@ export const tenantService = {
         updatedAt: response.data.updated_at ? new Date(response.data.updated_at) : undefined
       };
       
+      // Atualizar o localStorage com o novo tenant ID
+      if (convertedResponse.id) {
+        console.log('Salvando novo tenant ID no localStorage:', convertedResponse.id);
+        localStorage.setItem('tenantId', convertedResponse.id);
+        
+        // Atualizar a variável global e disparar eventos
+        currentTenantId = convertedResponse.id;
+        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new CustomEvent('tenant-id-updated'));
+      }
+      
       return convertedResponse;
     } catch (error: any) {
       console.error('Erro detalhado ao criar tenant:', error);
@@ -389,10 +409,19 @@ export const tenantService = {
       
       console.log('Payload enviado para API (createAdminUser):', JSON.stringify(payload, null, 2));
       
-      // Usar a função auxiliar para criar o cabeçalho com tenant-id
-      // Importante: Este endpoint pode não precisar do tenant-id no cabeçalho, 
-      // já que é passado no payload, mas vamos incluir por precaução
-      const config = tenantService._createTenantHeader(user.tenantId);
+      // Garantir que o tenant-id no localStorage seja igual ao do usuário que está sendo criado
+      if (localStorage.getItem('tenantId') !== user.tenantId) {
+        console.log('Atualizando tenant ID no localStorage:', user.tenantId);
+        localStorage.setItem('tenantId', user.tenantId);
+        
+        // Atualizar a variável global e disparar eventos
+        currentTenantId = user.tenantId;
+        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new CustomEvent('tenant-id-updated'));
+      }
+      
+      // Criar configuração com o mesmo tenant-id
+      let config = tenantService._createTenantHeader(user.tenantId);
       
       // Log mais detalhado dos cabeçalhos
       console.log('Cabeçalhos enviados para createAdminUser:', JSON.stringify(config, null, 2));
@@ -401,6 +430,13 @@ export const tenantService = {
       if (USE_CORS_PROXY) {
         console.log('Usando CORS proxy. URL completa:', 
           'https://cors-proxy.htmldriven.com/?' + encodeURIComponent(API_BASE_URL + '/setup/admin'));
+      }
+      
+      // Verificação final: garantir que o tenant-id no cabeçalho corresponda ao tenant-id do usuário
+      if (!config.headers || config.headers['tenant-id'] !== user.tenantId) {
+        console.warn('AVISO: tenant-id no cabeçalho não corresponde ao tenant-id do usuário!');
+        console.warn('Atualizando configuração de cabeçalho...');
+        config = tenantService._createTenantHeader(user.tenantId);
       }
       
       const response = await api.post('/setup/admin', payload, config);
@@ -429,6 +465,30 @@ export const tenantService = {
           data: error.response.data,
           headers: error.response.headers
         });
+        
+        // Verificar especificamente o erro 409 (Conflict) - Usuário admin já existe
+        if (error.response.status === 409 && user.tenantId) {
+          const tenantIdFromHeader = localStorage.getItem('tenantId');
+          console.warn('Erro 409: Admin já existe. Verificando o tenant-id usado:');
+          console.warn('tenant-id no payload:', user.tenantId);
+          console.warn('tenant-id atual no localStorage:', tenantIdFromHeader);
+          
+          // Se o tenant-id no localStorage for diferente do fornecido no payload, isso pode ser a causa do erro
+          if (tenantIdFromHeader !== user.tenantId) {
+            console.error('INCOMPATIBILIDADE DETECTADA: tenant-id no localStorage é diferente do tenant-id no payload!');
+            
+            // Em caso de inconsistência, tente redefinir o tenant-id no localStorage e tentar novamente
+            localStorage.setItem('tenantId', user.tenantId);
+            currentTenantId = user.tenantId;
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new CustomEvent('tenant-id-updated'));
+            
+            throw new Error(
+              'Inconsistência detectada entre tenant-id no localStorage e no payload. ' + 
+              'O tenant-id foi atualizado. Por favor, tente novamente.'
+            );
+          }
+        }
       } else if (error.request) {
         // A requisição foi feita mas não houve resposta
         console.error('Não houve resposta do servidor:', error.request);
@@ -463,8 +523,19 @@ export const tenantService = {
       
       console.log('Payload enviado para API (createUser):', JSON.stringify(payload, null, 2));
       
-      // Usar a função auxiliar para criar o cabeçalho com tenant-id
-      const config = tenantService._createTenantHeader(user.tenantId);
+      // Garantir que o tenant-id no localStorage seja igual ao do usuário que está sendo criado
+      if (localStorage.getItem('tenantId') !== user.tenantId) {
+        console.log('Atualizando tenant ID no localStorage:', user.tenantId);
+        localStorage.setItem('tenantId', user.tenantId);
+        
+        // Atualizar a variável global e disparar eventos
+        currentTenantId = user.tenantId;
+        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new CustomEvent('tenant-id-updated'));
+      }
+      
+      // Criar configuração com o mesmo tenant-id
+      let config = tenantService._createTenantHeader(user.tenantId);
       
       // Log mais detalhado dos cabeçalhos
       console.log('Cabeçalhos enviados para createUser:', JSON.stringify(config, null, 2));
@@ -472,6 +543,13 @@ export const tenantService = {
       // Verificação adicional para debug
       if (!config.headers || !config.headers['tenant-id']) {
         console.warn('ALERTA: O cabeçalho tenant-id não foi configurado corretamente!');
+      }
+      
+      // Verificação final: garantir que o tenant-id no cabeçalho corresponda ao tenant-id do usuário
+      if (!config.headers || config.headers['tenant-id'] !== user.tenantId) {
+        console.warn('AVISO: tenant-id no cabeçalho não corresponde ao tenant-id do usuário!');
+        console.warn('Atualizando configuração de cabeçalho...');
+        config = tenantService._createTenantHeader(user.tenantId);
       }
       
       // Adicionar log detalhado de debug da URL completa
@@ -507,6 +585,30 @@ export const tenantService = {
           data: error.response.data,
           headers: error.response.headers
         });
+        
+        // Verificar especificamente o erro 409 (Conflict) - Usuário já existe
+        if (error.response.status === 409 && user.tenantId) {
+          const tenantIdFromHeader = localStorage.getItem('tenantId');
+          console.warn('Erro 409: Usuário já existe. Verificando o tenant-id usado:');
+          console.warn('tenant-id no payload:', user.tenantId);
+          console.warn('tenant-id atual no localStorage:', tenantIdFromHeader);
+          
+          // Se o tenant-id no localStorage for diferente do fornecido no payload, isso pode ser a causa do erro
+          if (tenantIdFromHeader !== user.tenantId) {
+            console.error('INCOMPATIBILIDADE DETECTADA: tenant-id no localStorage é diferente do tenant-id no payload!');
+            
+            // Em caso de inconsistência, tente redefinir o tenant-id no localStorage e tentar novamente
+            localStorage.setItem('tenantId', user.tenantId);
+            currentTenantId = user.tenantId;
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new CustomEvent('tenant-id-updated'));
+            
+            throw new Error(
+              'Inconsistência detectada entre tenant-id no localStorage e no payload. ' + 
+              'O tenant-id foi atualizado. Por favor, tente novamente.'
+            );
+          }
+        }
       } else if (error.request) {
         // A requisição foi feita mas não houve resposta
         console.error('Não houve resposta do servidor:', error.request);
@@ -1037,10 +1139,18 @@ export const customerService = {
    */
   getCustomers: async (page: number = 0, size: number = 10, filter?: string): Promise<CustomersResponse> => {
     try {
+      // Garantir que estamos acessando o endpoint correto de customers, não branches
       let url = `/customers?page=${page + 1}&size=${size}`; // API usa 1-indexed para páginas
+      
+      // Verificar se a API realmente está usando customers ou outro caminho
+      const apiBasePath = '/customers'; // Se precisar mudar, atualize aqui
+      url = `${apiBasePath}?page=${page + 1}&size=${size}`;
+      
       if (filter) {
         url += `&name=${encodeURIComponent(filter)}`;
       }
+      
+      console.log(`customerService.getCustomers: URL final: ${url}`);
       
       // Verificar se temos o tenant ID antes de fazer a requisição
       const tenantId = localStorage.getItem('tenantId');
@@ -1055,29 +1165,68 @@ export const customerService = {
       const response = await api.get(url);
       console.log('customerService.getCustomers: Resposta original da API:', response.data);
       
-      // Verificar se a resposta está no formato esperado
-      // Se a API retornar {customers, total_count, etc.} em vez de {content, totalElements, etc.}
-      if (response.data.customers && !response.data.content) {
-        // Adaptar o formato da resposta da API para o formato esperado pelo componente
-        return {
-          content: (response.data.customers || []).map((customer: any) => normalizeCustomer(customer)),
-          totalElements: response.data.total_count || 0,
-          totalPages: response.data.total_pages || 0,
-          size: response.data.page_size || size,
-          number: (response.data.page ? response.data.page - 1 : page) // Convertendo para 0-indexed
-        };
+      // Criar uma resposta padrão com o formato esperado pelo frontend
+      const adaptedResponse: CustomersResponse = {
+        content: [],
+        totalElements: 0,
+        totalPages: 0,
+        size: size,
+        number: page
+      };
+      
+      // Novo formato da API: {items, total, page, size, total_pages}
+      if (response.data.items && Array.isArray(response.data.items)) {
+        adaptedResponse.content = response.data.items.map((customer: any) => normalizeCustomer(customer));
+        adaptedResponse.totalElements = response.data.total || 0;
+        adaptedResponse.totalPages = response.data.total_pages || 0;
+        adaptedResponse.size = response.data.size || size;
+        adaptedResponse.number = (response.data.page ? response.data.page - 1 : page); // Convertendo para 0-indexed
+        return adaptedResponse;
       }
       
-      // Verificar se a resposta já está no formato esperado mas precisa normalizar os objetos
+      // Formato antigo: {customers, total_count, etc.}
+      if (response.data.customers && Array.isArray(response.data.customers)) {
+        adaptedResponse.content = response.data.customers.map((customer: any) => normalizeCustomer(customer));
+        adaptedResponse.totalElements = response.data.total_count || 0;
+        adaptedResponse.totalPages = response.data.total_pages || 0;
+        adaptedResponse.size = response.data.page_size || size;
+        adaptedResponse.number = (response.data.page ? response.data.page - 1 : page); // Convertendo para 0-indexed
+        return adaptedResponse;
+      }
+      
+      // Formato esperado pelo componente: {content, totalElements, etc.}
       if (response.data.content && Array.isArray(response.data.content)) {
-        return {
-          ...response.data,
-          content: response.data.content.map((customer: any) => normalizeCustomer(customer))
-        };
+        adaptedResponse.content = response.data.content.map((customer: any) => normalizeCustomer(customer));
+        adaptedResponse.totalElements = response.data.totalElements || 0;
+        adaptedResponse.totalPages = response.data.totalPages || 0;
+        adaptedResponse.size = response.data.size || size;
+        adaptedResponse.number = response.data.number || page;
+        return adaptedResponse;
       }
       
-      // Se chegou aqui, retornar dados como estão
-      return response.data;
+      // Se chegou aqui, tentar extrair o array de clientes da resposta
+      console.warn('customerService.getCustomers: Formato de resposta desconhecido, tentando adaptar...');
+      let customersArray: any[] = [];
+      
+      if (Array.isArray(response.data)) {
+        customersArray = response.data;
+      } else if (response.data && typeof response.data === 'object') {
+        // Procurar uma propriedade que seja um array
+        for (const key in response.data) {
+          if (Array.isArray(response.data[key])) {
+            customersArray = response.data[key];
+            break;
+          }
+        }
+      }
+      
+      if (customersArray.length > 0) {
+        adaptedResponse.content = customersArray.map(customer => normalizeCustomer(customer));
+        adaptedResponse.totalElements = customersArray.length;
+        adaptedResponse.totalPages = 1;
+      }
+      
+      return adaptedResponse;
     } catch (error: any) {
       console.error('customerService.getCustomers: Erro ao buscar clientes:', error);
       

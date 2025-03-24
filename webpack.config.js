@@ -40,11 +40,17 @@ module.exports = {
       {
         context: ['/api'],
         target: 'http://localhost:8084',
+        pathRewrite: { '^/api': '/api' },
         changeOrigin: true,
-        secure: false,
-        logLevel: 'debug'
+        secure: false
       }
-    ]
+    ],
+    client: {
+      overlay: {
+        errors: true,
+        warnings: false,
+      },
+    },
   },
   plugins: [
     new HtmlWebpackPlugin({

@@ -13,7 +13,12 @@ import {
   Avatar,
   Tooltip,
   useTheme as useMuiTheme,
-  alpha
+  alpha,
+  Select,
+  FormControl,
+  InputLabel,
+  SelectChangeEvent,
+  Button
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -24,10 +29,13 @@ import {
   Settings as SettingsIcon,
   Logout as LogoutIcon,
   Search as SearchIcon,
-  Dashboard as DashboardIcon
+  Dashboard as DashboardIcon,
+  Business as BusinessIcon,
+  KeyboardArrowDown as KeyboardArrowDownIcon
 } from '@mui/icons-material';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useBranch } from '../../context/BranchContext';
 import { useNavigate } from 'react-router-dom';
 import SearchBar from '../ui/SearchBar';
 import { motion } from 'framer-motion';
@@ -40,14 +48,17 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const muiTheme = useMuiTheme();
   const { mode, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
+  const { activeBranch, branches, setActiveBranch, refreshBranches } = useBranch();
   const navigate = useNavigate();
   
   const [notificationsAnchorEl, setNotificationsAnchorEl] = useState<null | HTMLElement>(null);
   const [userMenuAnchorEl, setUserMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [branchMenuAnchorEl, setBranchMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [showSearch, setShowSearch] = useState(false);
   
   const isNotificationsMenuOpen = Boolean(notificationsAnchorEl);
   const isUserMenuOpen = Boolean(userMenuAnchorEl);
+  const isBranchMenuOpen = Boolean(branchMenuAnchorEl);
   
   const handleNotificationsMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setNotificationsAnchorEl(event.currentTarget);
@@ -55,6 +66,20 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   
   const handleUserMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setUserMenuAnchorEl(event.currentTarget);
+  };
+  
+  const handleBranchMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    refreshBranches();
+    setBranchMenuAnchorEl(event.currentTarget);
+  };
+  
+  const handleBranchMenuClose = () => {
+    setBranchMenuAnchorEl(null);
+  };
+  
+  const handleSelectBranch = (branch: any) => {
+    setActiveBranch(branch);
+    handleBranchMenuClose();
   };
   
   const handleMenuClose = () => {
@@ -313,6 +338,104 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
     </Menu>
   );
   
+  const branchMenu = (
+    <Menu
+      anchorEl={branchMenuAnchorEl}
+      anchorOrigin={{
+        vertical: 'bottom',
+        horizontal: 'right',
+      }}
+      keepMounted
+      transformOrigin={{
+        vertical: 'top',
+        horizontal: 'right',
+      }}
+      open={isBranchMenuOpen}
+      onClose={handleBranchMenuClose}
+      PaperProps={{
+        sx: { 
+          width: 280,
+          maxHeight: 400,
+          mt: 1.5,
+          overflow: 'auto',
+          borderRadius: 2,
+          boxShadow: muiTheme.palette.mode === 'light' 
+            ? '0 10px 40px -10px rgba(0,0,0,0.2)' 
+            : '0 10px 40px -10px rgba(0,0,0,0.5)',
+          border: muiTheme.palette.mode === 'light' 
+            ? '1px solid rgba(0,0,0,0.05)' 
+            : '1px solid rgba(255,255,255,0.05)'
+        }
+      }}
+    >
+      <Box sx={{ p: 2 }}>
+        <Typography variant="h6" fontWeight={600} gutterBottom>
+          Selecionar Filial
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Escolha a filial para o contexto atual
+        </Typography>
+      </Box>
+      <Divider />
+      {branches.length === 0 ? (
+        <MenuItem disabled>
+          <Typography variant="body2">Nenhuma filial disponível</Typography>
+        </MenuItem>
+      ) : (
+        branches.map((branch) => (
+          <MenuItem 
+            key={branch.id} 
+            onClick={() => handleSelectBranch(branch)}
+            sx={{
+              py: 1.5,
+              position: 'relative',
+              borderLeft: '3px solid transparent',
+              ...(activeBranch?.id === branch.id && {
+                borderLeft: `3px solid ${muiTheme.palette.primary.main}`,
+                bgcolor: alpha(muiTheme.palette.primary.main, 0.08),
+              }),
+              '&:hover': {
+                bgcolor: alpha(muiTheme.palette.primary.main, 0.05),
+              }
+            }}
+          >
+            <ListItemIcon>
+              <BusinessIcon color={activeBranch?.id === branch.id ? "primary" : "action"} />
+            </ListItemIcon>
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column'
+            }}>
+              <Typography variant="body1" fontWeight={activeBranch?.id === branch.id ? 600 : 400}>
+                {branch.name}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {branch.code} {branch.isMain && '(Principal)'}
+              </Typography>
+            </Box>
+            {activeBranch?.id === branch.id && (
+              <Box sx={{
+                width: 8,
+                height: 8,
+                bgcolor: 'primary.main',
+                borderRadius: '50%',
+                position: 'absolute',
+                right: 16,
+                boxShadow: `0 0 0 3px ${alpha(muiTheme.palette.primary.main, 0.2)}`
+              }} />
+            )}
+          </MenuItem>
+        ))
+      )}
+      <Divider />
+      <MenuItem onClick={() => navigate('/branches')} sx={{ justifyContent: 'center', py: 1.5 }}>
+        <Typography variant="body2" color="primary" fontWeight={500}>
+          Gerenciar Filiais
+        </Typography>
+      </MenuItem>
+    </Menu>
+  );
+  
   return (
     <AppBar 
       position="fixed" 
@@ -376,6 +499,43 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
         </Box>
         
         <Box sx={{ flexGrow: 1 }} />
+        
+        {user && (
+          <Box sx={{ mr: 2 }}>
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={handleBranchMenuOpen}
+              startIcon={<BusinessIcon />}
+              endIcon={<KeyboardArrowDownIcon />}
+              sx={{
+                textTransform: 'none',
+                borderRadius: 2,
+                px: 2,
+                py: 0.8,
+                borderColor: alpha(muiTheme.palette.primary.main, 0.3),
+                '&:hover': {
+                  borderColor: muiTheme.palette.primary.main,
+                  bgcolor: alpha(muiTheme.palette.primary.main, 0.05),
+                }
+              }}
+            >
+              {activeBranch ? (
+                <Box sx={{ textAlign: 'left' }}>
+                  <Typography variant="body2" fontWeight={500} noWrap>
+                    {activeBranch.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {activeBranch.code}
+                  </Typography>
+                </Box>
+              ) : (
+                <Typography variant="body2">Selecionar Filial</Typography>
+              )}
+            </Button>
+            {branchMenu}
+          </Box>
+        )}
         
         {showSearch ? (
           <SearchBar onClose={toggleSearch} />
