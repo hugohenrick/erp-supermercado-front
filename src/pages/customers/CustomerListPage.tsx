@@ -49,11 +49,14 @@ import { formatPersonType, formatCustomerType, formatCustomerStatus, formatDate 
 import { Link as RouterLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { formatCPF, formatCNPJ } from '../../utils/documentUtils';
+import { useBranch } from '../../context/BranchContext';
+import useBranchChangeRefresh from '../../hooks/useBranchChangeRefresh';
 
 const CustomerListPage: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
+  const { activeBranch } = useBranch();
   
   // Estados
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -148,6 +151,10 @@ const CustomerListPage: React.FC = () => {
       setLoading(false);
     }
   }, [page, rowsPerPage, debouncedSearchTerm]);
+  
+  // Use our custom hook to automatically refresh data when branch changes
+  // This replaces the previous branch change effects
+  useBranchChangeRefresh(fetchCustomers, [page, rowsPerPage, debouncedSearchTerm], setPage);
   
   // Efeito para carregar clientes quando a página é carregada ou quando os parâmetros mudam
   useEffect(() => {

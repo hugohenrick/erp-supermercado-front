@@ -48,6 +48,7 @@ import { formatFullAddress, formatBranchType, formatBranchStatus } from '../../u
 import { Link as RouterLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useBranch } from '../../context/BranchContext';
+import useBranchChangeRefresh from '../../hooks/useBranchChangeRefresh';
 
 const BranchListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -141,6 +142,9 @@ const BranchListPage: React.FC = () => {
       setLoading(false);
     }
   }, [page, rowsPerPage, debouncedSearchTerm]); // Removemos refreshBranches das dependências
+  
+  // Use our custom hook to automatically refresh data when branch changes
+  useBranchChangeRefresh(fetchBranches, [page, rowsPerPage, debouncedSearchTerm], setPage);
   
   // Efeito para carregar filiais quando a página é carregada ou quando os parâmetros mudam
   useEffect(() => {
