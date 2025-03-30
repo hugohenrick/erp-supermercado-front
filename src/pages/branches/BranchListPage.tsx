@@ -144,20 +144,12 @@ const BranchListPage: React.FC = () => {
   }, [page, rowsPerPage, debouncedSearchTerm]); // Removemos refreshBranches das dependências
   
   // Use our custom hook to automatically refresh data when branch changes
-  useBranchChangeRefresh(fetchBranches, [page, rowsPerPage, debouncedSearchTerm], setPage);
+  // Usamos o custom hook para gerenciar a atualização automática quando a filial muda
+  const { loading: branchChangeLoading, refresh: branchChangeRefresh } = useBranchChangeRefresh(fetchBranches, [page, rowsPerPage, debouncedSearchTerm], setPage);
   
   // Efeito para carregar filiais quando a página é carregada ou quando os parâmetros mudam
-  useEffect(() => {
-    fetchBranches();
-  }, [fetchBranches]);
-  
-  // Efeito separado para atualizar o contexto global quando necessário
-  useEffect(() => {
-    // Só executamos essa atualização no primeiro carregamento da página
-    if (localStorage.getItem('tenantId')) {
-      refreshBranches();
-    }
-  }, [refreshBranches]); // Executará apenas na montagem e quando refreshBranches mudar (raramente)
+  // Removemos esse useEffect duplicado que causava chamadas redundantes
+  // fetchBranches já está sendo chamado pelo useBranchChangeRefresh
   
   // Efeito para debounce da busca
   useEffect(() => {
@@ -168,6 +160,11 @@ const BranchListPage: React.FC = () => {
     
     return () => clearTimeout(timer);
   }, [searchTerm]);
+  
+  // Atualizar o loading state baseado no custom hook
+  useEffect(() => {
+    setLoading(branchChangeLoading);
+  }, [branchChangeLoading]);
   
   // Manipuladores de eventos
   const handleChangePage = (_: unknown, newPage: number) => {
@@ -183,8 +180,9 @@ const BranchListPage: React.FC = () => {
     setSearchTerm(event.target.value);
   };
   
+  // handleRefresh agora usa o refresh do custom hook
   const handleRefresh = () => {
-    fetchBranches();
+    branchChangeRefresh();
   };
   
   const handleAddBranch = () => {

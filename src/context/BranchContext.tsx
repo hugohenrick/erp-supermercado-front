@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { Branch, branchService } from '../services/api';
 
 interface BranchContextType {
@@ -22,6 +22,7 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFetchTime, setLastFetchTime] = useState<number>(0);
+  const isRefreshingRef = useRef(false);
 
   // Recuperar a filial ativa do localStorage durante a inicialização
   useEffect(() => {
@@ -62,6 +63,8 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
 
   // Função para buscar todas as filiais - agora usando useCallback para estabilizar a referência
   const refreshBranches = useCallback(async (force: boolean = false) => {
+    console.log('refreshBranches called, force:', force);
+    
     // Verificação de cache - só buscar novamente se passou pelo menos 2 minutos desde a última vez
     // ou se a busca for forçada (force = true)
     const now = Date.now();
@@ -73,12 +76,13 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
     }
     
     // Se já estiver carregando, não iniciar outra busca
-    if (loading) {
-      console.log('Já está buscando filiais, aguardando...');
+    if (loading || isRefreshingRef.current) {
+      console.log('Já está buscando filiais, ignorando chamada duplicada');
       return branches;
     }
     
     setLoading(true);
+    isRefreshingRef.current = true;
     setError(null);
     
     try {
@@ -86,7 +90,7 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
       // Buscar todas as filiais (usando tamanho grande para pegar todas)
       const result = await branchService.getBranches(0, 100);
       setBranches(result.content);
-      setLastFetchTime(Date.now());
+      setLastFetchTime(now);
       
       // Se não houver filial ativa e temos filiais, selecionar a primeira
       if (!activeBranch && result.content.length > 0) {
@@ -102,6 +106,7 @@ export const BranchProvider: React.FC<BranchProviderProps> = ({ children }) => {
       return branches; // Retornar as filiais atuais em caso de erro
     } finally {
       setLoading(false);
+      isRefreshingRef.current = false;
     }
   }, [branches, loading, activeBranch, lastFetchTime]);
 

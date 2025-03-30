@@ -12,7 +12,6 @@ import {
   ListItemIcon,
   Avatar,
   Tooltip,
-  useTheme as useMuiTheme,
   alpha,
   Select,
   FormControl,
@@ -33,7 +32,7 @@ import {
   Business as BusinessIcon,
   KeyboardArrowDown as KeyboardArrowDownIcon
 } from '@mui/icons-material';
-import { useTheme } from '../../context/ThemeContext';
+import { useTheme, useMuiTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useBranch } from '../../context/BranchContext';
 import { useNavigate } from 'react-router-dom';
@@ -45,8 +44,8 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
-  const muiTheme = useMuiTheme();
-  const { mode, toggleTheme } = useTheme();
+  const theme = useMuiTheme();
+  const { mode, toggleColorMode } = useTheme();
   const { user, logout } = useAuth();
   const { activeBranch, branches, setActiveBranch, refreshBranches } = useBranch();
   const navigate = useNavigate();
@@ -69,6 +68,15 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   };
   
   const handleBranchMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    // Evitar múltiplos cliques em sequência
+    if ((handleBranchMenuOpen as any).lastClick && Date.now() - (handleBranchMenuOpen as any).lastClick < 1000) {
+      console.log('Debounce: Ignorando clique muito rápido em handleBranchMenuOpen');
+      return;
+    }
+    
+    // Registrar timestamp do clique
+    (handleBranchMenuOpen as any).lastClick = Date.now();
+    
     refreshBranches();
     setBranchMenuAnchorEl(event.currentTarget);
   };
@@ -137,10 +145,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           mt: 1.5,
           overflow: 'hidden',
           borderRadius: 2,
-          boxShadow: muiTheme.palette.mode === 'light' 
+          boxShadow: theme.palette.mode === 'light' 
             ? '0 10px 40px -10px rgba(0,0,0,0.2)' 
             : '0 10px 40px -10px rgba(0,0,0,0.5)',
-          border: muiTheme.palette.mode === 'light' 
+          border: theme.palette.mode === 'light' 
             ? '1px solid rgba(0,0,0,0.05)' 
             : '1px solid rgba(255,255,255,0.05)'
         }
@@ -167,10 +175,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                 position: 'relative',
                 transition: 'all 0.2s ease',
                 '&:hover': {
-                  bgcolor: alpha(muiTheme.palette.primary.main, 0.1),
+                  bgcolor: alpha(theme.palette.primary.main, 0.1),
                 },
                 ...(notification.read ? {} : {
-                  bgcolor: alpha(muiTheme.palette.primary.main, 0.05),
+                  bgcolor: alpha(theme.palette.primary.main, 0.05),
                 })
               }}
             >
@@ -191,7 +199,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                       position: 'absolute',
                       left: -12,
                       top: 6,
-                      boxShadow: '0 0 0 3px ' + alpha(muiTheme.palette.primary.main, 0.2)
+                      boxShadow: '0 0 0 3px ' + alpha(theme.palette.primary.main, 0.2)
                     }}
                   />
                 )}
@@ -240,10 +248,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           mt: 1.5,
           overflow: 'hidden',
           borderRadius: 2,
-          boxShadow: muiTheme.palette.mode === 'light' 
+          boxShadow: theme.palette.mode === 'light' 
             ? '0 10px 40px -10px rgba(0,0,0,0.2)' 
             : '0 10px 40px -10px rgba(0,0,0,0.5)',
-          border: muiTheme.palette.mode === 'light' 
+          border: theme.palette.mode === 'light' 
             ? '1px solid rgba(0,0,0,0.05)' 
             : '1px solid rgba(255,255,255,0.05)'
         }
@@ -253,8 +261,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
         sx={{ 
           px: 2, 
           py: 2.5,
-          background: 'linear-gradient(to right, ' + alpha(muiTheme.palette.primary.main, 0.1) + ', ' + alpha(muiTheme.palette.primary.light, 0.1) + ')',
-          borderBottom: '1px solid ' + alpha(muiTheme.palette.divider, 0.5)
+          background: 'linear-gradient(to right, ' + alpha(theme.palette.primary.main, 0.1) + ', ' + alpha(theme.palette.primary.light, 0.1) + ')',
+          borderBottom: '1px solid ' + alpha(theme.palette.divider, 0.5)
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -262,9 +270,9 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             sx={{ 
               width: 42, 
               height: 42, 
-              bgcolor: muiTheme.palette.primary.main,
-              border: '2px solid ' + muiTheme.palette.background.paper,
-              boxShadow: '0 2px 8px ' + alpha(muiTheme.palette.primary.main, 0.4)
+              bgcolor: theme.palette.primary.main,
+              border: '2px solid ' + theme.palette.background.paper,
+              boxShadow: '0 2px 8px ' + alpha(theme.palette.primary.main, 0.4)
             }}
           >
             {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
@@ -288,7 +296,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             mx: 1,
             borderRadius: 1,
             '&:hover': {
-              bgcolor: alpha(muiTheme.palette.primary.main, 0.1),
+              bgcolor: alpha(theme.palette.primary.main, 0.1),
             }
           }}
         >
@@ -305,7 +313,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             mx: 1,
             borderRadius: 1,
             '&:hover': {
-              bgcolor: alpha(muiTheme.palette.primary.main, 0.1),
+              bgcolor: alpha(theme.palette.primary.main, 0.1),
             }
           }}
         >
@@ -325,7 +333,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             mx: 1,
             borderRadius: 1,
             '&:hover': {
-              bgcolor: alpha(muiTheme.palette.error.main, 0.1),
+              bgcolor: alpha(theme.palette.error.main, 0.1),
             }
           }}
         >
@@ -359,10 +367,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           mt: 1.5,
           overflow: 'auto',
           borderRadius: 2,
-          boxShadow: muiTheme.palette.mode === 'light' 
+          boxShadow: theme.palette.mode === 'light' 
             ? '0 10px 40px -10px rgba(0,0,0,0.2)' 
             : '0 10px 40px -10px rgba(0,0,0,0.5)',
-          border: muiTheme.palette.mode === 'light' 
+          border: theme.palette.mode === 'light' 
             ? '1px solid rgba(0,0,0,0.05)' 
             : '1px solid rgba(255,255,255,0.05)'
         }
@@ -391,11 +399,11 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
               position: 'relative',
               borderLeft: '3px solid transparent',
               ...(activeBranch?.id === branch.id && {
-                borderLeft: `3px solid ${muiTheme.palette.primary.main}`,
-                bgcolor: alpha(muiTheme.palette.primary.main, 0.08),
+                borderLeft: `3px solid ${theme.palette.primary.main}`,
+                bgcolor: alpha(theme.palette.primary.main, 0.08),
               }),
               '&:hover': {
-                bgcolor: alpha(muiTheme.palette.primary.main, 0.05),
+                bgcolor: alpha(theme.palette.primary.main, 0.05),
               }
             }}
           >
@@ -421,7 +429,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                 borderRadius: '50%',
                 position: 'absolute',
                 right: 16,
-                boxShadow: `0 0 0 3px ${alpha(muiTheme.palette.primary.main, 0.2)}`
+                boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.2)}`
               }} />
             )}
           </MenuItem>
@@ -443,10 +451,12 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
       elevation={0}
       sx={{
         zIndex: (theme) => theme.zIndex.drawer + 1,
-        backgroundColor: alpha(muiTheme.palette.background.paper, muiTheme.palette.mode === 'light' ? 0.9 : 0.8),
+        backgroundColor: theme.palette.mode === 'light' 
+          ? '#ffffff' 
+          : theme.palette.background.paper,
         backdropFilter: 'blur(10px)',
-        borderBottom: '1px solid ' + alpha(muiTheme.palette.divider, 0.08),
-        boxShadow: muiTheme.palette.mode === 'light' 
+        borderBottom: '1px solid ' + alpha(theme.palette.divider, 0.08),
+        boxShadow: theme.palette.mode === 'light' 
           ? '0 4px 20px rgba(0, 0, 0, 0.05)' 
           : '0 4px 20px rgba(0, 0, 0, 0.2)',
       }}
@@ -460,9 +470,9 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             onClick={onMenuToggle}
             sx={{ 
               mr: 2,
-              color: muiTheme.palette.primary.main,
+              color: theme.palette.primary.main,
               '&:hover': {
-                bgcolor: alpha(muiTheme.palette.primary.main, 0.1),
+                bgcolor: alpha(theme.palette.primary.main, 0.1),
               },
               transition: 'all 0.2s ease',
             }}
@@ -474,10 +484,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <DashboardIcon 
                 sx={{ 
-                  color: muiTheme.palette.primary.main, 
+                  color: theme.palette.primary.main, 
                   mr: 1,
                   fontSize: 28,
-                  filter: 'drop-shadow(0 2px 4px ' + alpha(muiTheme.palette.primary.main, 0.4) + ')'
+                  filter: 'drop-shadow(0 2px 4px ' + alpha(theme.palette.primary.main, 0.4) + ')'
                 }} 
               />
               <Typography
@@ -487,7 +497,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                 sx={{ 
                   display: { xs: 'none', sm: 'block' }, 
                   fontWeight: 'bold',
-                  background: 'linear-gradient(to right, ' + muiTheme.palette.primary.main + ', ' + muiTheme.palette.primary.light + ')',
+                  background: 'linear-gradient(to right, ' + theme.palette.primary.main + ', ' + theme.palette.primary.light + ')',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent'
                 }}
@@ -513,10 +523,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                 borderRadius: 2,
                 px: 2,
                 py: 0.8,
-                borderColor: alpha(muiTheme.palette.primary.main, 0.3),
+                borderColor: alpha(theme.palette.primary.main, 0.3),
                 '&:hover': {
-                  borderColor: muiTheme.palette.primary.main,
-                  bgcolor: alpha(muiTheme.palette.primary.main, 0.05),
+                  borderColor: theme.palette.primary.main,
+                  bgcolor: alpha(theme.palette.primary.main, 0.05),
                 }
               }}
             >
@@ -547,10 +557,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                 aria-label="search"
                 onClick={toggleSearch}
                 sx={{ 
-                  color: muiTheme.palette.text.secondary,
+                  color: theme.palette.text.secondary,
                   '&:hover': {
-                    bgcolor: alpha(muiTheme.palette.primary.main, 0.1),
-                    color: muiTheme.palette.primary.main
+                    bgcolor: alpha(theme.palette.primary.main, 0.1),
+                    color: theme.palette.primary.main
                   },
                   transition: 'all 0.2s ease',
                 }}
@@ -563,12 +573,12 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
               <IconButton
                 color="inherit"
                 aria-label="toggle theme"
-                onClick={toggleTheme}
+                onClick={toggleColorMode}
                 sx={{ 
                   ml: 1,
-                  color: mode === 'dark' ? muiTheme.palette.primary.light : muiTheme.palette.primary.main,
+                  color: mode === 'dark' ? theme.palette.primary.light : theme.palette.primary.main,
                   '&:hover': {
-                    bgcolor: alpha(muiTheme.palette.primary.main, 0.1)
+                    bgcolor: alpha(theme.palette.primary.main, 0.1)
                   },
                   transition: 'all 0.2s ease',
                 }}
@@ -584,9 +594,9 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                 onClick={handleNotificationsMenuOpen}
                 sx={{ 
                   ml: 1,
-                  color: unreadNotifications > 0 ? muiTheme.palette.warning.main : muiTheme.palette.text.secondary,
+                  color: unreadNotifications > 0 ? theme.palette.warning.main : theme.palette.text.secondary,
                   '&:hover': {
-                    bgcolor: alpha(unreadNotifications > 0 ? muiTheme.palette.warning.main : muiTheme.palette.primary.main, 0.1),
+                    bgcolor: alpha(unreadNotifications > 0 ? theme.palette.warning.main : theme.palette.primary.main, 0.1),
                   },
                   transition: 'all 0.2s ease',
                 }}
@@ -596,8 +606,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                   color="error"
                   sx={{ 
                     '& .MuiBadge-badge': {
-                      bgcolor: muiTheme.palette.error.main,
-                      boxShadow: '0 0 0 2px ' + muiTheme.palette.background.paper
+                      bgcolor: theme.palette.error.main,
+                      boxShadow: '0 0 0 2px ' + theme.palette.background.paper
                     }
                   }}
                 >
@@ -614,7 +624,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                 sx={{ 
                   ml: 1.5,
                   '&:hover': {
-                    bgcolor: alpha(muiTheme.palette.primary.main, 0.1)
+                    bgcolor: alpha(theme.palette.primary.main, 0.1)
                   },
                   transition: 'all 0.2s ease',
                 }}
@@ -623,10 +633,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                   sx={{ 
                     width: 34, 
                     height: 34, 
-                    bgcolor: muiTheme.palette.primary.main,
+                    bgcolor: theme.palette.primary.main,
                     color: '#fff',
-                    border: '2px solid ' + muiTheme.palette.background.paper,
-                    boxShadow: '0 2px 8px ' + alpha(muiTheme.palette.primary.main, 0.4),
+                    border: '2px solid ' + theme.palette.background.paper,
+                    boxShadow: '0 2px 8px ' + alpha(theme.palette.primary.main, 0.4),
                     fontWeight: 'bold',
                     fontSize: '0.95rem'
                   }}

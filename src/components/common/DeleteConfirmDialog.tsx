@@ -1,115 +1,68 @@
 import React from 'react';
 import {
-  Button,
   Dialog,
-  DialogActions,
+  DialogTitle,
   DialogContent,
   DialogContentText,
-  DialogTitle,
-  alpha,
+  DialogActions,
+  Button,
   useTheme
 } from '@mui/material';
-import {
-  DeleteForever as DeleteForeverIcon,
-  Warning as WarningIcon
-} from '@mui/icons-material';
 
 interface DeleteConfirmDialogProps {
   open: boolean;
   title: string;
   content: string;
-  onCancel: () => void;
   onConfirm: () => void;
-  loading?: boolean;
+  onCancel: () => void;
 }
 
 const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
   open,
   title,
   content,
-  onCancel,
   onConfirm,
-  loading = false
+  onCancel
 }) => {
   const theme = useTheme();
-  
+
   return (
     <Dialog
       open={open}
       onClose={onCancel}
-      aria-labelledby="delete-dialog-title"
-      aria-describedby="delete-dialog-description"
       PaperProps={{
-        elevation: 0,
         sx: {
-          border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
           borderRadius: 2,
-          boxShadow: `0 4px 20px 0 ${alpha(theme.palette.divider, 0.5)}`,
-          overflow: 'hidden',
-          maxWidth: 450
+          width: '100%',
+          maxWidth: 400
         }
       }}
     >
-      <DialogTitle 
-        id="delete-dialog-title"
-        sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: 1,
-          color: theme.palette.error.main,
-          fontWeight: 600,
-          pb: 1
-        }}
-      >
-        <DeleteForeverIcon color="error" />
-        {title}
-      </DialogTitle>
+      <DialogTitle>{title}</DialogTitle>
       <DialogContent>
-        <DialogContentText 
-          id="delete-dialog-description"
-          sx={{ 
-            display: 'flex', 
-            alignItems: 'flex-start', 
-            gap: 1,
-            mb: 2,
-            color: theme.palette.text.primary
-          }}
-        >
-          <WarningIcon 
-            sx={{ 
-              color: theme.palette.warning.main, 
-              mt: 0.5
-            }} 
-            fontSize="small"
-          />
-          {content}
-        </DialogContentText>
+        <DialogContentText>{content}</DialogContentText>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 3 }}>
+      <DialogActions sx={{ p: 2, pt: 1 }}>
         <Button 
           onClick={onCancel}
-          disabled={loading}
+          variant="outlined"
           sx={{ 
-            borderRadius: 2, 
-            px: 3,
-            fontWeight: 500
+            minWidth: 100,
+            borderRadius: 1.5
           }}
         >
           Cancelar
         </Button>
         <Button
           onClick={onConfirm}
-          color="error"
           variant="contained"
-          disabled={loading}
-          startIcon={loading ? null : <DeleteForeverIcon />}
+          color="error"
           sx={{ 
-            borderRadius: 2, 
-            px: 3,
-            fontWeight: 500
+            minWidth: 100,
+            borderRadius: 1.5
           }}
         >
-          {loading ? 'Excluindo...' : 'Excluir'}
+          Excluir
         </Button>
       </DialogActions>
     </Dialog>

@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 // Definir se deve usar um proxy CORS ou não - desativado pois usamos o proxy do webpack
 const USE_CORS_PROXY = false;
@@ -6,8 +6,47 @@ const USE_CORS_PROXY = false;
 // URL base da API - usamos path relativo para aproveitar o proxy do webpack
 const API_BASE_URL = '/api/v1';
 
+// Cache de requisições para evitar duplicação
+const requestCache: Record<string, { promise: Promise<any>, timestamp: number }> = {};
+
+// Middleware para deduplica requisições em um curto período de tempo
+export function deduplicateRequest<T>(
+  key: string, 
+  requestFn: () => Promise<T>, 
+  ttl: number = 1000
+): Promise<T> {
+  const now = Date.now();
+  const cacheEntry = requestCache[key];
+  
+  // Se existe uma requisição em andamento com o mesmo key e está dentro do TTL
+  if (cacheEntry && (now - cacheEntry.timestamp < ttl)) {
+    console.log(`Usando requisição em cache para ${key}. Idade: ${now - cacheEntry.timestamp}ms`);
+    return cacheEntry.promise;
+  }
+  
+  // Criar nova promise e armazenar no cache
+  const promise = requestFn();
+  
+  // Guardar no cache
+  requestCache[key] = {
+    promise,
+    timestamp: now
+  };
+  
+  // Limpar do cache após o TTL
+  promise.finally(() => {
+    setTimeout(() => {
+      if (requestCache[key]?.timestamp === now) {
+        delete requestCache[key];
+      }
+    }, ttl);
+  });
+  
+  return promise;
+}
+
 // Cria uma instância do axios com configurações base
-const api = axios.create({
+const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
@@ -115,9 +154,12 @@ api.interceptors.request.use(
     
     // Converter dados para snake_case antes de enviar ao servidor
     if (config.data && (config.method === 'post' || config.method === 'put' || config.method === 'patch')) {
-      console.log('Convertendo dados de requisição para snake_case');
-      config.data = convertToSnakeCase(config.data);
-      console.log('Dados convertidos:', config.data);
+      // Não converter se for FormData
+      if (!(config.data instanceof FormData)) {
+        console.log('Convertendo dados de requisição para snake_case');
+        config.data = convertToSnakeCase(config.data);
+        console.log('Dados convertidos:', config.data);
+      }
     }
     
     // Aplicar modificações necessárias para o proxy
@@ -128,62 +170,193 @@ api.interceptors.request.use(
   }
 );
 
+// Flag para controlar se há um refresh de token em andamento
+let isRefreshing = false;
+// Array de callbacks para requisições que aguardam refresh de token
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+// Função auxiliar para adicionar callbacks à fila de espera
+const subscribeTokenRefresh = (cb: (token: string) => void) => {
+  refreshSubscribers.push(cb);
+};
+
+// Função auxiliar para notificar todos os callbacks quando o token for atualizado
+const onTokenRefreshed = (token: string) => {
+  refreshSubscribers.forEach(cb => cb(token));
+  refreshSubscribers = [];
+};
+
 // Adicionar interceptor de resposta para converter de snake_case para camelCase
+// e lidar com erros de autenticação
 api.interceptors.response.use(
   (response) => {
     // Converter dados da resposta para camelCase
-    if (response.data) {
+    if (response.data && !(response.data instanceof Blob)) {
       console.log('Convertendo dados de resposta para camelCase');
       response.data = convertToCamelCase(response.data);
       console.log('Dados convertidos:', response.data);
     }
     return response;
   },
-  (error) => {
+  async (error) => {
+    const originalRequest = error.config;
+    console.log('Interceptor de resposta detectou erro:', error.response?.status);
+    
+    // Evitar loop infinito de tentativas de renovação de token
+    if (originalRequest._retry) {
+      console.log('Requisição já tentou refresh, rejeitando permanentemente');
+      return Promise.reject(error);
+    }
+    
+    // Se o erro for 401 (não autorizado) e não estamos já tentando renovar o token
+    // e não é uma requisição para renovar token ou fazer login
+    if (error.response?.status === 401 && 
+        !originalRequest._retry && 
+        !originalRequest.url?.includes('refresh-token') &&
+        !originalRequest.url?.includes('login')) {
+      
+      console.log('Erro 401 detectado, tentando refresh token...');
+      
+      // Se já estamos renovando o token, adicione esta requisição à fila
+      if (isRefreshing) {
+        console.log('Já existe um refresh em andamento, adicionando requisição à fila');
+        return new Promise((resolve) => {
+          subscribeTokenRefresh((token) => {
+            originalRequest.headers['Authorization'] = `Bearer ${token}`;
+            resolve(api(originalRequest));
+          });
+        });
+      }
+      
+      // Marcar como retry e iniciar processo de renovação
+      originalRequest._retry = true;
+      isRefreshing = true;
+      
+      try {
+        // Tenta renovar o token
+        const refreshToken = localStorage.getItem('refreshToken');
+        if (!refreshToken) {
+          console.error('Refresh token não disponível no localStorage');
+          throw new Error('Refresh token não disponível');
+        }
+        
+        console.log('Enviando requisição de refresh token...');
+        
+        // Usar axios diretamente para evitar interceptores
+        const response = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
+          refresh_token: refreshToken
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'tenant-id': currentTenantId || localStorage.getItem('tenantId'),
+            'branch-id': currentBranchId || localStorage.getItem('branchId')
+          }
+        });
+        
+        console.log('Resposta de refresh token recebida:', response.status);
+        
+        // Verificar se a resposta contém os tokens esperados
+        if (!response.data.access_token) {
+          console.error('Resposta de refresh não contém access_token:', response.data);
+          throw new Error('Resposta de refresh inválida');
+        }
+        
+        const newToken = response.data.access_token;
+        localStorage.setItem('token', newToken);
+        console.log('Novo token salvo no localStorage');
+        
+        // Se a resposta incluir um novo refresh token, armazene-o também
+        if (response.data.refresh_token) {
+          localStorage.setItem('refreshToken', response.data.refresh_token);
+          console.log('Novo refresh token salvo no localStorage');
+        }
+        
+        // Atualizar tenant ID se estiver na resposta
+        if (response.data.user?.tenant_id) {
+          localStorage.setItem('tenantId', response.data.user.tenant_id);
+          currentTenantId = response.data.user.tenant_id;
+          console.log('Tenant ID atualizado no localStorage:', response.data.user.tenant_id);
+        }
+        
+        // Atualizar o token na requisição original e notificar outras requisições
+        originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+        onTokenRefreshed(newToken);
+        
+        console.log('Reexecutando requisição original com novo token');
+        
+        // Reenviar a requisição original com o novo token
+        return api(originalRequest);
+      } catch (refreshError) {
+        console.error('Falha ao renovar token:', refreshError);
+        
+        // Em caso de falha no refresh, limpar autenticação
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('tenantId');
+        localStorage.removeItem('branchId');
+        
+        console.log('Redirecionando para login após falha no refresh');
+        
+        // Redirecionar para login, se possível
+        window.location.href = '/login';
+        
+        return Promise.reject(refreshError);
+      } finally {
+        // Resetar a flag, independentemente do resultado
+        isRefreshing = false;
+        console.log('Flag isRefreshing resetada:', isRefreshing);
+      }
+    }
+    
+    // Para outros erros, rejeitar normalmente
     return Promise.reject(error);
   }
 );
 
-// Interface para o status do Tenant
+// Enums
 export enum TenantStatus {
   ACTIVE = 'ACTIVE',
   INACTIVE = 'INACTIVE',
   SUSPENDED = 'SUSPENDED',
-  PENDING = 'PENDING',
+  PENDING = 'PENDING'
 }
 
-// Para o usuário, vamos adicionar enum para Role
 export enum UserRole {
   ADMIN = 'ADMIN',
   MANAGER = 'MANAGER',
   EMPLOYEE = 'EMPLOYEE',
-  CASHIER = 'CASHIER',
+  CASHIER = 'CASHIER'
 }
 
-// Interface para o tipo de plano
+export enum UserStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  PENDING = 'PENDING'
+}
+
 export enum PlanType {
   BASIC = 'BASIC',
   STANDARD = 'STANDARD',
   PREMIUM = 'PREMIUM',
-  ENTERPRISE = 'ENTERPRISE',
+  ENTERPRISE = 'ENTERPRISE'
 }
 
-// Interface para o Tenant (Empresa)
+// Interfaces
 export interface Tenant {
   id?: string;
   name: string;
-  document: string; // CNPJ da empresa
+  document: string;
   email: string;
   phone: string;
   status?: TenantStatus;
-  schema?: string; // Nome do schema no banco de dados
+  schema?: string;
   planType: PlanType;
-  maxBranches: number; // Número máximo de filiais permitidas
+  maxBranches: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-// Interface para criar um usuário associado ao tenant
 export interface User {
   id?: string;
   name: string;
@@ -192,19 +365,20 @@ export interface User {
   tenantId?: string;
   branchId?: string;
   role?: UserRole;
-  status?: TenantStatus;
-  isAdmin?: boolean; // Campo auxiliar para UI
+  status?: UserStatus;
+  isAdmin?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  lastLoginAt?: string;
 }
 
-// Interface para resposta de autenticação
 export interface AuthResponse {
   user: User;
   token: string;
   refreshToken: string;
-  tenant_id?: string; // O backend agora retorna tenant_id na resposta
+  tenant_id?: string;
 }
 
-// Interface para credenciais de login
 export interface LoginCredentials {
   email: string;
   password: string;
@@ -212,61 +386,141 @@ export interface LoginCredentials {
 
 // Serviço de autenticação
 export const authService = {
-  // Login simplificado - sem necessidade de tenant_id
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
-    console.log('Tentando login com:', { email: credentials.email, password: '••••••••' });
-    
     try {
-      // Fazer a requisição diretamente sem interceptors para evitar conversões
-      const response = await axios.post(`${API_BASE_URL}/auth/login`, {
-        email: credentials.email,
-        password: credentials.password
-      });
+      console.log('login: Iniciando processo de login para:', credentials.email);
       
-      console.log('Resposta de login (dados originais):', response.data);
+      const response = await axios.post(`${API_BASE_URL}/auth/login`, credentials);
       
-      // Armazenar informações no localStorage
-      localStorage.setItem('token', response.data.access_token);
-      localStorage.setItem('refreshToken', response.data.refresh_token);
+      console.log('login: Resposta recebida, status:', response.status);
       
-      // Armazenar o tenant_id que está dentro do objeto user (usando snake_case diretamente)
-      if (response.data.user && response.data.user.tenant_id) {
-        const tenantId = response.data.user.tenant_id;
-        console.log('Login: Tenant ID encontrado no user (snake_case):', tenantId);
-        localStorage.setItem('tenantId', tenantId);
-        
-        // Atualizar a variável global e disparar eventos
-        currentTenantId = tenantId;
-        window.dispatchEvent(new Event('storage'));
-        window.dispatchEvent(new CustomEvent('tenant-id-updated'));
-      } else {
-        console.warn('Login: Nenhum tenant_id encontrado na resposta de login!');
-        console.warn('Response data:', response.data);
+      // Verificar se a resposta contém os dados esperados
+      if (!response.data) {
+        console.error('login: Resposta vazia');
+        throw new Error('Resposta vazia do servidor');
       }
       
-      // Converter para o formato esperado pela aplicação
+      // Log da resposta completa para depuração (cuidado com informações sensíveis)
+      console.log('login: Campos da resposta:', Object.keys(response.data));
+      
+      // Obter tokens dos campos corretos (compatível com diferentes formatos de API)
+      const token = response.data.access_token || response.data.token;
+      const refreshToken = response.data.refresh_token || response.data.refreshToken;
+      
+      if (!token) {
+        console.error('login: Token não encontrado na resposta');
+        throw new Error('Token não encontrado na resposta');
+      }
+      
+      // Limpar o localStorage antes de adicionar novos tokens para evitar problemas
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('tenantId');
+      
+      // Usar setTimeout para garantir que a operação de armazenamento seja concluída
+      setTimeout(() => {
+        try {
+          console.log('login: Token obtido, salvando no localStorage');
+          localStorage.setItem('token', token);
+          
+          if (refreshToken) {
+            console.log('login: Refresh token obtido, salvando no localStorage');
+            localStorage.setItem('refreshToken', refreshToken);
+          } else {
+            console.warn('login: Refresh token não encontrado na resposta');
+          }
+          
+          // Extrair e salvar tenant_id do usuário, tentando diferentes caminhos possíveis
+          let tenantId = null;
+          if (response.data.user?.tenant_id) {
+            tenantId = response.data.user.tenant_id;
+          } else if (response.data.tenant_id) {
+            tenantId = response.data.tenant_id;
+          }
+          
+          if (tenantId) {
+            console.log('login: Tenant ID obtido:', tenantId);
+            localStorage.setItem('tenantId', tenantId);
+            currentTenantId = tenantId;
+            
+            // Disparar eventos para notificar a mudança
+            window.dispatchEvent(new Event('storage'));
+            window.dispatchEvent(new CustomEvent('tenant-id-updated'));
+          } else {
+            console.warn('login: Tenant ID não encontrado na resposta');
+          }
+          
+          // Verificar se os tokens foram armazenados corretamente
+          const storedToken = localStorage.getItem('token');
+          const storedRefreshToken = localStorage.getItem('refreshToken');
+          
+          console.log('login: Verificação de armazenamento:');
+          console.log('- Token armazenado:', Boolean(storedToken));
+          console.log('- Refresh token armazenado:', Boolean(storedRefreshToken));
+          
+          if (!storedToken) {
+            console.error('login: ALERTA! Token não foi armazenado corretamente no localStorage');
+            // Tentar novamente
+            localStorage.setItem('token', token);
+          }
+        } catch (storageError) {
+          console.error('login: Erro ao armazenar tokens no localStorage:', storageError);
+        }
+      }, 0);
+      
+      // Extrair e salvar branch_id, se disponível
+      let branchId = null;
+      if (response.data.user?.branch_id) {
+        branchId = response.data.user.branch_id;
+      } else if (response.data.branch_id) {
+        branchId = response.data.branch_id;
+      }
+      
+      if (branchId) {
+        console.log('login: Branch ID obtido:', branchId);
+        localStorage.setItem('branchId', branchId);
+        currentBranchId = branchId;
+        
+        // Disparar evento para notificar a mudança
+        window.dispatchEvent(new CustomEvent('branch-id-updated'));
+      }
+      
+      // Preparar objeto AuthResponse com os dados obtidos
       const authResponse: AuthResponse = {
         user: {
-          id: response.data.user.id,
-          name: response.data.user.name,
-          email: response.data.user.email,
-          tenantId: response.data.user.tenant_id,
-          role: response.data.user.role,
-          status: response.data.user.status
+          id: response.data.user?.id,
+          name: response.data.user?.name || '',
+          email: response.data.user?.email || credentials.email,
+          tenantId: response.data.user?.tenant_id || response.data.tenant_id,
+          branchId: branchId,
+          role: response.data.user?.role as UserRole,
+          status: response.data.user?.status as UserStatus
         },
-        token: response.data.access_token,
-        refreshToken: response.data.refresh_token,
-        tenant_id: response.data.user.tenant_id
+        token: token,
+        refreshToken: refreshToken,
+        tenant_id: response.data.user?.tenant_id || response.data.tenant_id
       };
       
+      console.log('login: Processo de login concluído com sucesso');
+      
       return authResponse;
-    } catch (error) {
-      console.error('Erro ao fazer login:', error);
+    } catch (error: any) {
+      console.error('login: Erro ao fazer login:', error.message);
+      
+      // Log detalhado da resposta de erro
+      if (error.response) {
+        console.error('login: Detalhes do erro:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+          headers: error.response.headers
+        });
+      }
+      
       throw error;
     }
   },
   
-  // Obter dados do usuário atual
   getCurrentUser: async (): Promise<User> => {
     try {
       const response = await api.get<User>('/auth/me');
@@ -277,40 +531,108 @@ export const authService = {
     }
   },
   
-  // Renovar o token JWT
-  refreshToken: async (): Promise<{ token: string }> => {
+  refreshToken: async (): Promise<{ token: string; refreshToken?: string }> => {
     const refreshToken = localStorage.getItem('refreshToken');
     if (!refreshToken) {
+      console.error('refreshToken: Refresh token não disponível no localStorage');
       throw new Error('Refresh token não disponível');
     }
     
     try {
-      const response = await api.post<any>('/auth/refresh-token', {
+      console.log('refreshToken: Iniciando processo de renovação de token');
+      
+      // Usar axios diretamente em vez da instância api para evitar interceptores
+      const response = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
         refresh_token: refreshToken
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'tenant-id': currentTenantId || localStorage.getItem('tenantId'),
+          'branch-id': currentBranchId || localStorage.getItem('branchId')
+        }
       });
       
-      // Atualizar o token no localStorage
-      localStorage.setItem('token', response.data.access_token);
+      console.log('refreshToken: Resposta recebida', response.status);
       
-      // Se a resposta incluir um tenant_id atualizado, armazená-lo também
-      if (response.data.user && response.data.user.tenant_id) {
-        localStorage.setItem('tenantId', response.data.user.tenant_id);
+      // Verificar e registrar a resposta completa para depuração
+      console.log('refreshToken: Corpo da resposta', JSON.stringify(response.data, null, 2));
+      
+      // Obter token do campo correto (compatível com access_token ou token)
+      const newToken = response.data.access_token || response.data.token;
+      
+      if (!newToken) {
+        console.error('refreshToken: Token não encontrado na resposta');
+        throw new Error('Token não encontrado na resposta');
       }
       
-      return { token: response.data.access_token };
-    } catch (error) {
-      console.error('Erro ao renovar token:', error);
-      // Em caso de erro, fazer logout
-      authService.logout();
+      console.log('refreshToken: Novo token obtido, atualizando localStorage');
+      
+      // Armazenar o novo token de acesso
+      localStorage.setItem('token', newToken);
+      
+      // Se houver um novo refresh token, armazená-lo também
+      let newRefreshToken = undefined;
+      if (response.data.refresh_token) {
+        newRefreshToken = response.data.refresh_token;
+        localStorage.setItem('refreshToken', newRefreshToken);
+        console.log('refreshToken: Novo refresh token armazenado');
+      }
+      
+      // Atualizar informações do tenant, se presentes
+      if (response.data.user?.tenant_id) {
+        localStorage.setItem('tenantId', response.data.user.tenant_id);
+        currentTenantId = response.data.user.tenant_id;
+        console.log('refreshToken: Tenant ID atualizado:', response.data.user.tenant_id);
+        
+        // Disparar evento para notificar a atualização
+        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new CustomEvent('tenant-id-updated'));
+      }
+      
+      // Se houver branch_id, atualizá-lo também
+      if (response.data.user?.branch_id) {
+        localStorage.setItem('branchId', response.data.user.branch_id);
+        currentBranchId = response.data.user.branch_id;
+        console.log('refreshToken: Branch ID atualizado:', response.data.user.branch_id);
+        
+        // Disparar evento para notificar a atualização
+        window.dispatchEvent(new CustomEvent('branch-id-updated'));
+      }
+      
+      console.log('refreshToken: Processo de renovação concluído com sucesso');
+      
+      return { 
+        token: newToken, 
+        refreshToken: newRefreshToken
+      };
+    } catch (error: any) {
+      console.error('refreshToken: Erro ao renovar token:', error.message);
+      
+      // Log detalhado da resposta de erro
+      if (error.response) {
+        console.error('refreshToken: Detalhes do erro:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+          headers: error.response.headers
+        });
+      }
+      
+      // Em caso de erro, limpar dados de autenticação
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('tenantId');
+      localStorage.removeItem('branchId');
+      
       throw error;
     }
   },
   
-  // Logout
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('tenantId');
+    localStorage.removeItem('branchId');
   }
 };
 
@@ -403,7 +725,7 @@ export const tenantService = {
         password: user.password,
         tenant_id: user.tenantId,
         role: UserRole.ADMIN, // Adicionar explicitamente a role ADMIN conforme exigido pelo backend
-        status: TenantStatus.ACTIVE, // Definir status como ACTIVE por padrão
+        status: UserStatus.ACTIVE, // Definir status como ACTIVE por padrão
         // Este endpoint específico não precisa de informações como branch_id, etc.
       };
       
@@ -450,7 +772,7 @@ export const tenantService = {
         password: '', // Não retornamos a senha
         tenantId: response.data.tenant_id,
         role: UserRole.ADMIN, // Este endpoint sempre cria um admin
-        status: TenantStatus.ACTIVE
+        status: UserStatus.ACTIVE
       };
       
       return convertedResponse;
@@ -518,7 +840,7 @@ export const tenantService = {
         // Definir o papel como ADMIN se isAdmin for true, caso contrário EMPLOYEE
         role: user.role || (user.isAdmin ? UserRole.ADMIN : UserRole.EMPLOYEE),
         // Definir status como ACTIVE por padrão
-        status: TenantStatus.ACTIVE
+        status: UserStatus.ACTIVE
       };
       
       console.log('Payload enviado para API (createUser):', JSON.stringify(payload, null, 2));
@@ -570,7 +892,7 @@ export const tenantService = {
         tenantId: response.data.tenant_id,
         branchId: response.data.branch_id,
         role: response.data.role as UserRole,
-        status: response.data.status as TenantStatus
+        status: response.data.status as UserStatus
       };
       
       return convertedResponse;
@@ -764,65 +1086,71 @@ export const branchService = {
     size: number;
     number: number;
   }> => {
-    try {
-      let url = `/branches?page=${page + 1}&size=${size}`; // API usa 1-indexed para páginas
-      if (filter) {
-        url += `&filter=${encodeURIComponent(filter)}`;
-      }
-      
-      // Verificar se temos o tenant ID antes de fazer a requisição
-      const tenantId = localStorage.getItem('tenantId');
-      if (!tenantId) {
-        console.error('branchService.getBranches: Tenant ID não encontrado no localStorage!');
-        console.error('É necessário configurar o Tenant ID antes de fazer requisições.');
-        throw new Error('Tenant ID não configurado. Configure o Tenant ID para continuar.');
-      }
-      
-      console.log(`branchService.getBranches: Buscando filiais com URL: ${url}, tenant-id: ${tenantId}`);
-      
-      const response = await api.get(url);
-      console.log('branchService.getBranches: Resposta original da API:', response.data);
-      
-      // Adaptar o formato da resposta da API para o formato esperado pelo componente
-      const adaptedResponse = {
-        content: (response.data.branches || []).map((branch: any) => normalizeBranch(branch)),
-        totalElements: response.data.total_count || 0,
-        totalPages: response.data.total_pages || 0,
-        size: response.data.page_size || size,
-        number: (response.data.page ? response.data.page - 1 : page) // Convertendo para 0-indexed
-      };
-      
-      console.log('branchService.getBranches: Resposta adaptada:', adaptedResponse);
-      
-      return adaptedResponse;
-    } catch (error: any) {
-      console.error('branchService.getBranches: Erro ao buscar filiais:', error);
-      
-      // Log detalhado do erro
-      if (error.response) {
-        console.error('branchService.getBranches: Detalhes do erro:', {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          headers: error.response.headers
-        });
-        
-        // Para erros específicos, dar dicas mais úteis
-        if (error.response.status === 400) {
-          console.error('branchService.getBranches: Erro 400 (Bad Request). Verifique se:');
-          console.error('1. O Tenant ID está configurado corretamente');
-          console.error('2. Os parâmetros da requisição estão corretos');
-        } else if (error.response.status === 401) {
-          console.error('branchService.getBranches: Erro 401 (Unauthorized). Verifique se:');
-          console.error('1. O token de autenticação é válido');
-          console.error('2. O token não expirou');
+    // Criar uma chave única para esta requisição específica
+    const cacheKey = `branches_page_${page}_size_${size}_filter_${filter || ''}`;
+    
+    // Usar o deduplicador para evitar chamadas repetidas
+    return deduplicateRequest(cacheKey, async () => {
+      try {
+        let url = `/branches?page=${page + 1}&size=${size}`; // API usa 1-indexed para páginas
+        if (filter) {
+          url += `&filter=${encodeURIComponent(filter)}`;
         }
-      } else if (error.request) {
-        console.error('branchService.getBranches: Não houve resposta do servidor:', error.request);
+        
+        // Verificar se temos o tenant ID antes de fazer a requisição
+        const tenantId = localStorage.getItem('tenantId');
+        if (!tenantId) {
+          console.error('branchService.getBranches: Tenant ID não encontrado no localStorage!');
+          console.error('É necessário configurar o Tenant ID antes de fazer requisições.');
+          throw new Error('Tenant ID não configurado. Configure o Tenant ID para continuar.');
+        }
+        
+        console.log(`branchService.getBranches: Buscando filiais com URL: ${url}, tenant-id: ${tenantId}`);
+        
+        const response = await api.get(url);
+        console.log('branchService.getBranches: Resposta original da API:', response.data);
+        
+        // Adaptar o formato da resposta da API para o formato esperado pelo componente
+        const adaptedResponse = {
+          content: (response.data.branches || []).map((branch: any) => normalizeBranch(branch)),
+          totalElements: response.data.total_count || 0,
+          totalPages: response.data.total_pages || 0,
+          size: response.data.page_size || size,
+          number: (response.data.page ? response.data.page - 1 : page) // Convertendo para 0-indexed
+        };
+        
+        console.log('branchService.getBranches: Resposta adaptada:', adaptedResponse);
+        
+        return adaptedResponse;
+      } catch (error: any) {
+        console.error('branchService.getBranches: Erro ao buscar filiais:', error);
+        
+        // Log detalhado do erro
+        if (error.response) {
+          console.error('branchService.getBranches: Detalhes do erro:', {
+            status: error.response.status,
+            statusText: error.response.statusText,
+            data: error.response.data,
+            headers: error.response.headers
+          });
+          
+          // Para erros específicos, dar dicas mais úteis
+          if (error.response.status === 400) {
+            console.error('branchService.getBranches: Erro 400 (Bad Request). Verifique se:');
+            console.error('1. O Tenant ID está configurado corretamente');
+            console.error('2. Os parâmetros da requisição estão corretos');
+          } else if (error.response.status === 401) {
+            console.error('branchService.getBranches: Erro 401 (Unauthorized). Verifique se:');
+            console.error('1. O token de autenticação é válido');
+            console.error('2. O token não expirou');
+          }
+        } else if (error.request) {
+          console.error('branchService.getBranches: Não houve resposta do servidor:', error.request);
+        }
+        
+        throw error;
       }
-      
-      throw error;
-    }
+    }, 2000); // TTL de 2 segundos para evitar chamadas duplicadas
   },
 
   /**
@@ -1138,142 +1466,148 @@ export const customerService = {
    * Busca todos os clientes com paginação e filtragem opcional
    */
   getCustomers: async (page: number = 0, size: number = 10, filter?: string): Promise<CustomersResponse> => {
-    try {
-      // Garantir que estamos acessando o endpoint correto de customers, não branches
-      let url = `/customers?page=${page + 1}&size=${size}`; // API usa 1-indexed para páginas
-      
-      // Verificar se a API realmente está usando customers ou outro caminho
-      const apiBasePath = '/customers'; // Se precisar mudar, atualize aqui
-      url = `${apiBasePath}?page=${page + 1}&size=${size}`;
-      
-      if (filter) {
-        url += `&name=${encodeURIComponent(filter)}`;
-      }
-      
-      console.log(`customerService.getCustomers: URL final: ${url}`);
-      
-      // Verificar se temos o tenant ID antes de fazer a requisição
-      const tenantId = localStorage.getItem('tenantId');
-      if (!tenantId) {
-        console.error('customerService.getCustomers: Tenant ID não encontrado no localStorage!');
-        console.error('É necessário configurar o Tenant ID antes de fazer requisições.');
-        throw new Error('Tenant ID não configurado. Configure o Tenant ID para continuar.');
-      }
-      
-      console.log(`customerService.getCustomers: Buscando clientes com URL: ${url}, tenant-id: ${tenantId}`);
-      
-      const response = await api.get(url);
-      console.log('customerService.getCustomers: Resposta original da API:', response.data);
-      
-      // Criar uma resposta padrão com o formato esperado pelo frontend
-      const adaptedResponse: CustomersResponse = {
-        content: [],
-        totalElements: 0,
-        totalPages: 0,
-        size: size,
-        number: page
-      };
-      
-      // Novo formato da API: {items, total, page, size, total_pages}
-      if (response.data.items && Array.isArray(response.data.items)) {
-        adaptedResponse.content = response.data.items.map((customer: any) => normalizeCustomer(customer));
-        adaptedResponse.totalElements = response.data.total || 0;
-        adaptedResponse.totalPages = response.data.total_pages || 0;
-        adaptedResponse.size = response.data.size || size;
-        adaptedResponse.number = (response.data.page ? response.data.page - 1 : page); // Convertendo para 0-indexed
-        return adaptedResponse;
-      }
-      
-      // Formato antigo: {customers, total_count, etc.}
-      if (response.data.customers && Array.isArray(response.data.customers)) {
-        adaptedResponse.content = response.data.customers.map((customer: any) => normalizeCustomer(customer));
-        adaptedResponse.totalElements = response.data.total_count || 0;
-        adaptedResponse.totalPages = response.data.total_pages || 0;
-        adaptedResponse.size = response.data.page_size || size;
-        adaptedResponse.number = (response.data.page ? response.data.page - 1 : page); // Convertendo para 0-indexed
-        return adaptedResponse;
-      }
-      
-      // Formato esperado pelo componente: {content, totalElements, etc.}
-      if (response.data.content && Array.isArray(response.data.content)) {
-        adaptedResponse.content = response.data.content.map((customer: any) => normalizeCustomer(customer));
-        adaptedResponse.totalElements = response.data.totalElements || 0;
-        adaptedResponse.totalPages = response.data.totalPages || 0;
-        adaptedResponse.size = response.data.size || size;
-        adaptedResponse.number = response.data.number || page;
-        return adaptedResponse;
-      }
-      
-      // Se chegou aqui, tentar extrair o array de clientes da resposta
-      console.warn('customerService.getCustomers: Formato de resposta desconhecido, tentando adaptar...');
-      let customersArray: any[] = [];
-      
-      if (Array.isArray(response.data)) {
-        customersArray = response.data;
-      } else if (response.data && typeof response.data === 'object') {
-        // Procurar uma propriedade que seja um array
-        for (const key in response.data) {
-          if (Array.isArray(response.data[key])) {
-            customersArray = response.data[key];
-            break;
+    // Criar uma chave única para esta requisição específica
+    const cacheKey = `customers_page_${page}_size_${size}_filter_${filter || ''}`;
+    
+    // Usar o deduplicador para evitar chamadas repetidas
+    return deduplicateRequest(cacheKey, async () => {
+      try {
+        // Garantir que estamos acessando o endpoint correto de customers, não branches
+        let url = `/customers?page=${page + 1}&size=${size}`; // API usa 1-indexed para páginas
+        
+        // Verificar se a API realmente está usando customers ou outro caminho
+        const apiBasePath = '/customers'; // Se precisar mudar, atualize aqui
+        url = `${apiBasePath}?page=${page + 1}&size=${size}`;
+        
+        if (filter) {
+          url += `&name=${encodeURIComponent(filter)}`;
+        }
+        
+        console.log(`customerService.getCustomers: URL final: ${url}`);
+        
+        // Verificar se temos o tenant ID antes de fazer a requisição
+        const tenantId = localStorage.getItem('tenantId');
+        if (!tenantId) {
+          console.error('customerService.getCustomers: Tenant ID não encontrado no localStorage!');
+          console.error('É necessário configurar o Tenant ID antes de fazer requisições.');
+          throw new Error('Tenant ID não configurado. Configure o Tenant ID para continuar.');
+        }
+        
+        console.log(`customerService.getCustomers: Buscando clientes com URL: ${url}, tenant-id: ${tenantId}`);
+        
+        const response = await api.get(url);
+        console.log('customerService.getCustomers: Resposta original da API:', response.data);
+        
+        // Criar uma resposta padrão com o formato esperado pelo frontend
+        const adaptedResponse: CustomersResponse = {
+          content: [],
+          totalElements: 0,
+          totalPages: 0,
+          size: size,
+          number: page
+        };
+        
+        // Novo formato da API: {items, total, page, size, total_pages}
+        if (response.data.items && Array.isArray(response.data.items)) {
+          adaptedResponse.content = response.data.items.map((customer: any) => normalizeCustomer(customer));
+          adaptedResponse.totalElements = response.data.total || 0;
+          adaptedResponse.totalPages = response.data.total_pages || 0;
+          adaptedResponse.size = response.data.size || size;
+          adaptedResponse.number = (response.data.page ? response.data.page - 1 : page); // Convertendo para 0-indexed
+          return adaptedResponse;
+        }
+        
+        // Formato antigo: {customers, total_count, etc.}
+        if (response.data.customers && Array.isArray(response.data.customers)) {
+          adaptedResponse.content = response.data.customers.map((customer: any) => normalizeCustomer(customer));
+          adaptedResponse.totalElements = response.data.total_count || 0;
+          adaptedResponse.totalPages = response.data.total_pages || 0;
+          adaptedResponse.size = response.data.page_size || size;
+          adaptedResponse.number = (response.data.page ? response.data.page - 1 : page); // Convertendo para 0-indexed
+          return adaptedResponse;
+        }
+        
+        // Formato esperado pelo componente: {content, totalElements, etc.}
+        if (response.data.content && Array.isArray(response.data.content)) {
+          adaptedResponse.content = response.data.content.map((customer: any) => normalizeCustomer(customer));
+          adaptedResponse.totalElements = response.data.totalElements || 0;
+          adaptedResponse.totalPages = response.data.totalPages || 0;
+          adaptedResponse.size = response.data.size || size;
+          adaptedResponse.number = response.data.number || page;
+          return adaptedResponse;
+        }
+        
+        // Se chegou aqui, tentar extrair o array de clientes da resposta
+        console.warn('customerService.getCustomers: Formato de resposta desconhecido, tentando adaptar...');
+        let customersArray: any[] = [];
+        
+        if (Array.isArray(response.data)) {
+          customersArray = response.data;
+        } else if (response.data && typeof response.data === 'object') {
+          // Procurar uma propriedade que seja um array
+          for (const key in response.data) {
+            if (Array.isArray(response.data[key])) {
+              customersArray = response.data[key];
+              break;
+            }
           }
         }
-      }
-      
-      if (customersArray.length > 0) {
-        adaptedResponse.content = customersArray.map(customer => normalizeCustomer(customer));
-        adaptedResponse.totalElements = customersArray.length;
-        adaptedResponse.totalPages = 1;
-      }
-      
-      return adaptedResponse;
-    } catch (error: any) {
-      console.error('customerService.getCustomers: Erro ao buscar clientes:', error);
-      
-      // Log detalhado do erro
-      if (error.response) {
-        console.error('customerService.getCustomers: Detalhes do erro:', {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          headers: error.response.headers
-        });
         
-        // Para erros específicos, dar dicas mais úteis
-        if (error.response.status === 400) {
-          console.error('customerService.getCustomers: Erro 400 (Bad Request). Verifique se:');
-          console.error('1. O Tenant ID está configurado corretamente');
-          console.error('2. Os parâmetros da requisição estão corretos');
-          console.error('3. O servidor está esperando os campos em snake_case (tente reinstalar a aplicação)');
-        } else if (error.response.status === 401) {
-          console.error('customerService.getCustomers: Erro 401 (Unauthorized). Verifique se:');
-          console.error('1. O token de autenticação é válido');
-          console.error('2. O token não expirou');
-          console.error('3. Você tem permissão para acessar este recurso');
-        } else if (error.response.status === 403) {
-          console.error('customerService.getCustomers: Erro 403 (Forbidden). Verifique se:');
-          console.error('1. O Tenant ID está correto');
-          console.error('2. Você tem permissão para acessar este recurso');
-        } else if (error.response.status === 404) {
-          console.error('customerService.getCustomers: Erro 404 (Not Found). Verifique se:');
-          console.error('1. A URL da API está correta');
-          console.error('2. O endpoint /customers existe no backend');
-        } else if (error.response.status === 500) {
-          console.error('customerService.getCustomers: Erro 500 (Internal Server Error). Isso é um problema no servidor.');
-          console.error('Verifique os logs do servidor para mais detalhes.');
+        if (customersArray.length > 0) {
+          adaptedResponse.content = customersArray.map(customer => normalizeCustomer(customer));
+          adaptedResponse.totalElements = customersArray.length;
+          adaptedResponse.totalPages = 1;
         }
-      } else if (error.request) {
-        console.error('customerService.getCustomers: Não houve resposta do servidor:', error.request);
-        console.error('Verifique se:');
-        console.error('1. O servidor está em execução');
-        console.error('2. A URL da API está correta');
-        console.error('3. Não há problemas de rede ou firewall');
-      } else {
-        console.error('customerService.getCustomers: Erro na configuração da requisição:', error.message);
+        
+        return adaptedResponse;
+      } catch (error: any) {
+        console.error('customerService.getCustomers: Erro ao buscar clientes:', error);
+        
+        // Log detalhado do erro
+        if (error.response) {
+          console.error('customerService.getCustomers: Detalhes do erro:', {
+            status: error.response.status,
+            statusText: error.response.statusText,
+            data: error.response.data,
+            headers: error.response.headers
+          });
+          
+          // Para erros específicos, dar dicas mais úteis
+          if (error.response.status === 400) {
+            console.error('customerService.getCustomers: Erro 400 (Bad Request). Verifique se:');
+            console.error('1. O Tenant ID está configurado corretamente');
+            console.error('2. Os parâmetros da requisição estão corretos');
+            console.error('3. O servidor está esperando os campos em snake_case (tente reinstalar a aplicação)');
+          } else if (error.response.status === 401) {
+            console.error('customerService.getCustomers: Erro 401 (Unauthorized). Verifique se:');
+            console.error('1. O token de autenticação é válido');
+            console.error('2. O token não expirou');
+            console.error('3. Você tem permissão para acessar este recurso');
+          } else if (error.response.status === 403) {
+            console.error('customerService.getCustomers: Erro 403 (Forbidden). Verifique se:');
+            console.error('1. O Tenant ID está correto');
+            console.error('2. Você tem permissão para acessar este recurso');
+          } else if (error.response.status === 404) {
+            console.error('customerService.getCustomers: Erro 404 (Not Found). Verifique se:');
+            console.error('1. A URL da API está correta');
+            console.error('2. O endpoint /customers existe no backend');
+          } else if (error.response.status === 500) {
+            console.error('customerService.getCustomers: Erro 500 (Internal Server Error). Isso é um problema no servidor.');
+            console.error('Verifique os logs do servidor para mais detalhes.');
+          }
+        } else if (error.request) {
+          console.error('customerService.getCustomers: Não houve resposta do servidor:', error.request);
+          console.error('Verifique se:');
+          console.error('1. O servidor está em execução');
+          console.error('2. A URL da API está correta');
+          console.error('3. Não há problemas de rede ou firewall');
+        } else {
+          console.error('customerService.getCustomers: Erro na configuração da requisição:', error.message);
+        }
+        
+        throw error;
       }
-      
-      throw error;
-    }
+    }, 2000); // TTL de 2 segundos para evitar chamadas duplicadas
   },
 
   /**

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useBranch } from '../context/BranchContext';
 
 /**
@@ -24,44 +24,75 @@ export function useBranchChangeRefresh<T extends any[]>(
 ) {
   const { activeBranch } = useBranch();
   const [loading, setLoading] = useState(false);
+  const isRefreshingRef = useRef(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Wrap the refresh function to handle loading state
+  // Wrap the refresh function to handle loading state and prevent duplicate calls
   const refresh = useCallback(async () => {
+    // Prevenir múltiplas chamadas simultâneas
+    if (isRefreshingRef.current) {
+      console.log('Refresh já em andamento, ignorando chamada duplicada');
+      return;
+    }
+    
+    isRefreshingRef.current = true;
     setLoading(true);
+    
     try {
       await refreshFunction();
     } finally {
       setLoading(false);
+      isRefreshingRef.current = false;
     }
   }, [refreshFunction]);
 
-  // Listen for branch changes and refresh data
-  useEffect(() => {
-    console.log('Branch changed, refreshing data:', activeBranch?.name);
-    if (activeBranch) {
-      // Reset to first page when branch changes (if setPage function is provided)
-      if (setPage) {
-        setPage(0);
-      }
-      
-      // Add a small delay to ensure interceptors have been updated with the new branchId
-      setTimeout(() => {
-        refresh();
-      }, 100);
+  // Função de debounce para prevenir múltiplas chamadas em intervalos curtos
+  const debouncedRefresh = useCallback(() => {
+    // Limpar qualquer timeout existente
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
     }
-  }, [activeBranch, refresh, setPage]);
+    
+    // Resetar para a primeira página se solicitado
+    if (setPage) {
+      setPage(0);
+    }
+    
+    // Adicionar delay antes de executar a operação
+    timeoutRef.current = setTimeout(() => {
+      refresh();
+    }, 300);
+  }, [refresh, setPage]);
 
-  // Listen for the branch-id-updated event
+  // Observar mudanças no activeBranch
+  useEffect(() => {
+    if (activeBranch) {
+      console.log('Branch changed to:', activeBranch.name);
+      debouncedRefresh();
+    }
+    
+    // Limpeza na desmontagem do componente
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [activeBranch, debouncedRefresh]);
+
+  // Observar o evento branch-id-updated - usar apenas quando não há mudança direta no activeBranch
   useEffect(() => {
     const handleBranchChange = () => {
-      console.log('branch-id-updated event detected, refreshing data...');
+      console.log('branch-id-updated event detected');
+      // Verificar se o branch ativo mudou realmente
+      const storedBranchId = localStorage.getItem('branchId');
+      const activeBranchId = activeBranch?.id;
       
-      // Reset to first page when branch changes (if setPage function is provided)
-      if (setPage) {
-        setPage(0);
+      if (storedBranchId !== activeBranchId) {
+        console.log('Branch ID changed from event, refreshing data...');
+        debouncedRefresh();
+      } else {
+        console.log('Branch ID unchanged, ignoring event');
       }
-      
-      refresh();
     };
     
     window.addEventListener('branch-id-updated', handleBranchChange);
@@ -69,8 +100,9 @@ export function useBranchChangeRefresh<T extends any[]>(
     return () => {
       window.removeEventListener('branch-id-updated', handleBranchChange);
     };
-  }, [refresh, setPage]);
+  }, [activeBranch, debouncedRefresh]);
 
+  // Retornar object com loading state e função de refresh manual
   return { loading, refresh };
 }
 

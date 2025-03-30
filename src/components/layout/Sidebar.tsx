@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -49,7 +49,8 @@ import {
   SupportAgent as SupportIcon,
   HelpOutline as HelpIcon,
   AttachMoney as MoneyIcon,
-  Business as BusinessIcon
+  Business as BusinessIcon,
+  VerifiedUser as VerifiedUserIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
@@ -66,7 +67,8 @@ interface MenuItem {
   path?: string;
   icon: React.ReactElement;
   badge?: number;
-  subItems?: Omit<MenuItem, 'subItems'>[];
+  subItems?: MenuItem[];
+  children?: MenuItem[];
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ open, onClose, width }) => {
@@ -78,7 +80,8 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose, width }) => {
     produtos: false,
     clientes: false,
     relatorios: false,
-    configuracoes: false
+    configuracoes: false,
+    filiais: false
   });
 
   // Define os itens do menu
@@ -104,12 +107,23 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose, width }) => {
     },
     {
       title: 'Filiais',
-      path: '/branches',
       icon: <BusinessIcon sx={{ 
         fontSize: 24, 
         color: '#6366f1', // Índigo vibrante
         filter: `drop-shadow(0 2px 2px ${alpha('#6366f1', 0.4)})` 
-      }} />
+      }} />,
+      children: [
+        {
+          title: 'Lista de Filiais',
+          path: '/branches',
+          icon: <BusinessIcon sx={{ fontSize: 22, color: '#6366f1' }} />
+        },
+        {
+          title: 'Certificados',
+          path: '/certificates',
+          icon: <VerifiedUserIcon sx={{ fontSize: 22, color: '#6366f1' }} />
+        }
+      ]
     },
     {
       title: 'Clientes',
@@ -277,10 +291,24 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose, width }) => {
     }
   ];
 
+  // Efeito para abrir o submenu quando a rota corresponder
+  useEffect(() => {
+    const currentPath = location.pathname;
+    menuItems.forEach((item) => {
+      const children = item.subItems || item.children || [];
+      if (children.some(child => currentPath.startsWith(child.path || ''))) {
+        setOpenSubMenus(prev => ({
+          ...prev,
+          [item.title.toLowerCase()]: true
+        }));
+      }
+    });
+  }, [location.pathname]);
+
   const handleSubMenuToggle = (key: string) => {
     setOpenSubMenus(prev => ({
       ...prev,
-      [key]: !prev[key]
+      [key.toLowerCase()]: !prev[key.toLowerCase()]
     }));
   };
 
@@ -476,7 +504,7 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose, width }) => {
           <List sx={{ width: '100%', p: 0 }}>
             {menuItems.map((item, index) => (
               <Box key={item.title} component={motion.div} variants={itemVariants}>
-                {item.subItems && open ? (
+                {item.subItems || item.children ? (
                   // Menu com submenus (somente quando aberto)
                   <React.Fragment>
                     <ListItemButton
@@ -532,7 +560,7 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose, width }) => {
                     </ListItemButton>
                     <Collapse in={openSubMenus[item.title.toLowerCase()]} timeout="auto" unmountOnExit>
                       <List component="div" disablePadding>
-                        {item.subItems.map((subItem) => {
+                        {(item.subItems || item.children || []).map((subItem) => {
                           const active = isActive(subItem.path);
                           return (
                             <motion.div
@@ -544,6 +572,11 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose, width }) => {
                               <ListItemButton
                                 component={Link}
                                 to={subItem.path || '#'}
+                                onClick={() => {
+                                  if (!open) {
+                                    onClose();
+                                  }
+                                }}
                                 sx={{
                                   pl: 4,
                                   py: 1,
@@ -617,7 +650,7 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose, width }) => {
                   >
                     <ListItemButton
                       component={Link}
-                      to={item.path || (item.subItems && item.subItems[0].path) || '#'}
+                      to={item.path || '#'}
                       sx={{
                         mb: 0.5,
                         p: open ? 1.2 : 1.4,

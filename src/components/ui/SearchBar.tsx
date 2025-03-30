@@ -26,6 +26,7 @@ import {
   Article as DocumentIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useMuiTheme } from '../../context/ThemeContext';
 
 interface SearchBarProps {
   onClose: () => void;
@@ -40,7 +41,7 @@ interface SearchResult {
 }
 
 const SearchBar: React.FC<SearchBarProps> = ({ onClose }) => {
-  const theme = useTheme();
+  const theme = useMuiTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);

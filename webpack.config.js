@@ -1,5 +1,16 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
+const dotenv = require('dotenv');
+
+// Load environment variables from .env file
+const env = dotenv.config().parsed || {};
+
+// Fallback values for environment variables
+const envKeys = Object.keys(env).reduce((prev, next) => {
+  prev[`process.env.${next}`] = JSON.stringify(env[next]);
+  return prev;
+}, {});
 
 module.exports = {
   entry: './src/index.tsx',
@@ -40,9 +51,8 @@ module.exports = {
       {
         context: ['/api'],
         target: 'http://localhost:8084',
-        pathRewrite: { '^/api': '/api' },
-        changeOrigin: true,
-        secure: false
+        secure: false,
+        changeOrigin: true
       }
     ],
     client: {
@@ -56,5 +66,8 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: './public/index.html',
     }),
+    new webpack.DefinePlugin({
+      'process.env': JSON.stringify(process.env)
+    })
   ],
 }; 
