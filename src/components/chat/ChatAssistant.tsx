@@ -13,8 +13,7 @@ import {
   Drawer,
   Tooltip,
   Badge,
-  Alert,
-  SvgIcon
+  Alert
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -28,47 +27,6 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { mcpService, MCPHistoryMessage } from '../../services/mcpService';
 import { useMuiTheme } from '../../context/ThemeContext';
-
-// Componente SVG personalizado para o avatar da Angie
-const AngieAvatar = (props: any) => (
-  <SvgIcon {...props} viewBox="0 0 100 100">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-      <defs>
-        <linearGradient id="skinGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style={{ stopColor: '#BA8169' }} />
-          <stop offset="100%" style={{ stopColor: '#A66E55' }} />
-        </linearGradient>
-        <linearGradient id="hairGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style={{ stopColor: '#1A1A1A' }} />
-          <stop offset="100%" style={{ stopColor: '#2C2C2C' }} />
-        </linearGradient>
-      </defs>
-      {/* Cabelo */}
-      <path
-        d="M50 10 C25 10 20 30 20 40 C20 50 25 70 50 70 C75 70 80 50 80 40 C80 30 75 10 50 10"
-        fill="url(#hairGradient)"
-      />
-      {/* Rosto */}
-      <path
-        d="M50 25 C35 25 30 35 30 45 C30 55 35 65 50 65 C65 65 70 55 70 45 C70 35 65 25 50 25"
-        fill="url(#skinGradient)"
-      />
-      {/* Olhos */}
-      <ellipse cx="40" cy="45" rx="3" ry="2" fill="#2C1810" />
-      <ellipse cx="60" cy="45" rx="3" ry="2" fill="#2C1810" />
-      {/* Sobrancelhas */}
-      <path d="M36 40 C38 38 42 38 44 40" stroke="#2C1810" strokeWidth="1.5" fill="none" />
-      <path d="M56 40 C58 38 62 38 64 40" stroke="#2C1810" strokeWidth="1.5" fill="none" />
-      {/* Nariz */}
-      <path d="M50 45 C48 48 48 50 50 52 C52 50 52 48 50 45" fill="#8B5E4B" />
-      {/* Boca */}
-      <path d="M45 55 C50 58 55 55 55 55" stroke="#8B5E4B" strokeWidth="1.5" fill="none" />
-      {/* Bochecha */}
-      <circle cx="38" cy="50" r="3" fill="#C17F6A" opacity="0.3" />
-      <circle cx="62" cy="50" r="3" fill="#C17F6A" opacity="0.3" />
-    </svg>
-  </SvgIcon>
-);
 
 interface Message {
   id: string;
@@ -185,21 +143,22 @@ const ChatAssistant: React.FC = () => {
   const AssistantAvatar = () => (
     <Avatar
       sx={{
-        bgcolor: alpha(theme.palette.primary.main, 0.1),
+        bgcolor: 'transparent',
         border: `2px solid ${theme.palette.primary.main}`,
         width: 48,
         height: 48,
         boxShadow: `0 2px 8px ${alpha(theme.palette.primary.main, 0.3)}`,
+        padding: 0,
+        '& .MuiAvatar-img': {
+          objectFit: 'cover',
+          objectPosition: 'center 30%',
+          width: '100%',
+          height: '100%'
+        }
       }}
-    >
-      <AngieAvatar
-        sx={{
-          width: '140%',
-          height: '140%',
-          transform: 'scale(1.4)',
-        }}
-      />
-    </Avatar>
+      src="/avatarAngie.png"
+      alt="Angie"
+    />
   );
   
   const MessageBubble: React.FC<{ message: Message }> = ({ message }) => (
@@ -257,6 +216,8 @@ const ChatAssistant: React.FC = () => {
             position: 'fixed',
             bottom: 24,
             right: 24,
+            width: 60,
+            height: 60,
             boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`,
             bgcolor: alpha(theme.palette.primary.main, 0.9),
             '&:hover': {
@@ -297,7 +258,22 @@ const ChatAssistant: React.FC = () => {
               },
             }}
           >
-            <AngieAvatar sx={{ width: 32, height: 32, transform: 'scale(1.4)' }} />
+            <Avatar
+              src="/avatarAngie.png"
+              alt="Angie"
+              sx={{
+                width: 45,
+                height: 45,
+                padding: 0,
+                background: 'transparent',
+                '& .MuiAvatar-img': {
+                  objectFit: 'cover',
+                  objectPosition: 'center 30%',
+                  width: '100%',
+                  height: '100%'
+                }
+              }}
+            />
           </Badge>
         </Fab>
       </Tooltip>

@@ -23,8 +23,13 @@ import {
   FormHelperText,
   Breadcrumbs,
   Link,
-  Tab,
-  Tabs
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  ListItemButton,
+  Drawer,
+  useMediaQuery
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -96,35 +101,9 @@ interface FormErrors {
   }>;
 }
 
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
-
 // Interface para as props do componente CustomerFormPage
 interface CustomerFormPageProps {
   viewOnly?: boolean;
-}
-
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`customer-tabpanel-${index}`}
-      aria-labelledby={`customer-tab-${index}`}
-      {...other}
-    >
-      {value === index && (
-        <Box sx={{ pt: 3 }}>
-          {children}
-        </Box>
-      )}
-    </div>
-  );
 }
 
 const CustomerFormPage: React.FC<CustomerFormPageProps> = ({ viewOnly = false }) => {
@@ -133,7 +112,21 @@ const CustomerFormPage: React.FC<CustomerFormPageProps> = ({ viewOnly = false })
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
   const isEditMode = !!id;
-  const [tabValue, setTabValue] = useState(0);
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  
+  // Referências para as seções
+  const basicInfoRef = React.useRef<HTMLDivElement>(null);
+  const addressesRef = React.useRef<HTMLDivElement>(null);
+  const contactsRef = React.useRef<HTMLDivElement>(null);
+  const financialRef = React.useRef<HTMLDivElement>(null);
+  const observationsRef = React.useRef<HTMLDivElement>(null);
+  
+  // Função para rolar para uma seção específica
+  const scrollToSection = (ref: React.RefObject<HTMLDivElement | null>) => {
+    if (ref.current) {
+      ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
   
   // Estado inicial do cliente
   const initialCustomerState: Customer = {
@@ -409,11 +402,6 @@ const CustomerFormPage: React.FC<CustomerFormPageProps> = ({ viewOnly = false })
     }));
   };
 
-  // Manipulador para alternar abas
-  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
-  
   // Validação do formulário
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
@@ -623,915 +611,976 @@ const CustomerFormPage: React.FC<CustomerFormPageProps> = ({ viewOnly = false })
   // Renderização principal
   return (
     <DashboardLayout>
-      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          <Box sx={{ mb: 4 }}>
-            <Grid container spacing={1} alignItems="center">
-              <Grid item>
-                <Tooltip title="Voltar para a lista de clientes">
-                  <IconButton
-                    component={RouterLink}
-                    to="/customers"
-                    sx={{ 
-                      mr: 1,
-                      bgcolor: alpha(theme.palette.primary.main, 0.1),
-                      '&:hover': {
-                        bgcolor: alpha(theme.palette.primary.main, 0.2)
-                      }
-                    }}
-                  >
-                    <ChevronLeftIcon />
-                  </IconButton>
-                </Tooltip>
-              </Grid>
-              <Grid item>
-                <Typography
-                  variant="h4"
-                  component="h1"
+      <Container maxWidth="lg">
+      
+        {fetchLoading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+            <CircularProgress />
+          </Box>
+        ) : fetchError ? (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {fetchError}
+          </Alert>
+        ) : (
+          <>
+            <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h4" component="h1" gutterBottom>
+                {viewOnly ? "Visualizar Cliente" : isEditMode ? "Editar Cliente" : "Novo Cliente"}
+              </Typography>
+            </Box>
+            
+            <Box sx={{ mb: 3 }}>
+              <Breadcrumbs aria-label="breadcrumb">
+                <Link component={RouterLink} to="/dashboard" color="inherit">
+                  Dashboard
+                </Link>
+                <Link component={RouterLink} to="/customers" color="inherit">
+                  Clientes
+                </Link>
+                <Typography color="text.primary">
+                  {viewOnly ? 'Visualizar' : (isEditMode ? 'Editar' : 'Novo')}
+                </Typography>
+              </Breadcrumbs>
+            </Box>
+            
+            <Grid container spacing={2}>
+              {/* Menu de navegação lateral */}
+              <Grid item xs={12} md={3}>
+                <Card
+                  elevation={0}
                   sx={{
-                    fontWeight: 700,
-                    color: theme.palette.text.primary,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1
+                    border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
+                    borderRadius: 2,
+                    boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
+                    position: { md: 'sticky' },
+                    top: { md: 16 },
+                    mb: { xs: 2, md: 0 }
                   }}
                 >
-                  <PersonIcon fontSize="large" color="primary" />
-                  {viewOnly ? 'Visualizar Cliente' : (isEditMode ? 'Editar Cliente' : 'Novo Cliente')}
-                </Typography>
+                  <CardContent sx={{ p: 0 }}>
+                    <List component="nav">
+                      <ListItemButton onClick={() => scrollToSection(basicInfoRef)}>
+                        <ListItemIcon>
+                          <PersonIcon color="primary" />
+                        </ListItemIcon>
+                        <ListItemText primary="Informações Básicas" />
+                      </ListItemButton>
+                      <ListItemButton onClick={() => scrollToSection(addressesRef)}>
+                        <ListItemIcon>
+                          <LocationIcon color="primary" />
+                        </ListItemIcon>
+                        <ListItemText primary="Endereços" />
+                      </ListItemButton>
+                      <ListItemButton onClick={() => scrollToSection(contactsRef)}>
+                        <ListItemIcon>
+                          <ContactPhoneIcon color="primary" />
+                        </ListItemIcon>
+                        <ListItemText primary="Contatos" />
+                      </ListItemButton>
+                      <ListItemButton onClick={() => scrollToSection(financialRef)}>
+                        <ListItemIcon>
+                          <MoneyIcon color="primary" />
+                        </ListItemIcon>
+                        <ListItemText primary="Financeiro" />
+                      </ListItemButton>
+                      <ListItemButton onClick={() => scrollToSection(observationsRef)}>
+                        <ListItemIcon>
+                          <DescriptionIcon color="primary" />
+                        </ListItemIcon>
+                        <ListItemText primary="Observações" />
+                      </ListItemButton>
+                    </List>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              {/* Formulário */}
+              <Grid item xs={12} md={9}>
+                <Box component="form" onSubmit={handleSubmit}>
+                  <div ref={basicInfoRef}>
+                    <Card
+                      elevation={0}
+                      sx={{
+                        border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
+                        borderRadius: 2,
+                        boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
+                        overflow: 'hidden',
+                        mb: 3
+                      }}
+                    >
+                      <CardContent>
+                        <Typography 
+                          variant="h6" 
+                          gutterBottom 
+                          sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 1,
+                            color: theme.palette.text.primary,
+                            fontWeight: 600,
+                            mb: 3
+                          }}
+                        >
+                          <PersonIcon fontSize="small" color="primary" />
+                          Informações Básicas
+                        </Typography>
+                        
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} md={2}>
+                            <TextField
+                              select
+                              fullWidth
+                              label="Tipo de Pessoa"
+                              name="personType"
+                              value={customer.personType}
+                              onChange={handleChange}
+                              error={!!errors.personType}
+                              helperText={errors.personType}
+                              required
+                              variant="outlined"
+                              InputProps={{ readOnly: viewOnly }}
+                            >
+                              <MenuItem value={PersonType.PF}>Pessoa Física</MenuItem>
+                              <MenuItem value={PersonType.PJ}>Pessoa Jurídica</MenuItem>
+                            </TextField>
+                          </Grid>
+                          
+                          <Grid item xs={12} md={customer.personType === PersonType.PF ? 6 : 5}>
+                            <TextField
+                              fullWidth
+                              label={customer.personType === PersonType.PF ? "Nome Completo" : "Razão Social"}
+                              name="name"
+                              value={customer.name}
+                              onChange={handleChange}
+                              error={!!errors.name}
+                              helperText={errors.name}
+                              required
+                              variant="outlined"
+                              placeholder={customer.personType === PersonType.PF ? "Ex: João da Silva" : "Ex: Empresa XYZ Ltda"}
+                              InputProps={{ readOnly: viewOnly }}
+                            />
+                          </Grid>
+                          
+                          {customer.personType === PersonType.PJ && (
+                            <Grid item xs={12} md={5}>
+                              <TextField
+                                fullWidth
+                                label="Nome Fantasia"
+                                name="tradeName"
+                                value={customer.tradeName}
+                                onChange={handleChange}
+                                variant="outlined"
+                                placeholder="Ex: XYZ Comércio"
+                                InputProps={{ readOnly: viewOnly }}
+                              />
+                            </Grid>
+                          )}
+                          
+                          <Grid item xs={12} md={4}>
+                            <TextField
+                              fullWidth
+                              label={customer.personType === PersonType.PF ? "CPF" : "CNPJ"}
+                              name="document"
+                              value={customer.document}
+                              onChange={handleChange}
+                              error={!!errors.document}
+                              helperText={errors.document}
+                              required
+                              variant="outlined"
+                              placeholder={customer.personType === PersonType.PF ? "000.000.000-00" : "00.000.000/0000-00"}
+                              inputProps={{ maxLength: customer.personType === PersonType.PF ? 14 : 18, readOnly: viewOnly }}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} md={4}>
+                            <TextField
+                              select
+                              fullWidth
+                              label="Tipo de Cliente"
+                              name="customerType"
+                              value={customer.customerType}
+                              onChange={handleChange}
+                              error={!!errors.customerType}
+                              helperText={errors.customerType}
+                              required
+                              variant="outlined"
+                              InputProps={{ readOnly: viewOnly }}
+                            >
+                              <MenuItem value={CustomerType.FINAL}>Consumidor Final</MenuItem>
+                              <MenuItem value={CustomerType.RESELLER}>Revendedor</MenuItem>
+                              <MenuItem value={CustomerType.WHOLESALE}>Atacadista</MenuItem>
+                            </TextField>
+                          </Grid>
+                          
+                          <Grid item xs={12} md={4}>
+                            <TextField
+                              select
+                              fullWidth
+                              label="Status"
+                              name="status"
+                              value={customer.status}
+                              onChange={handleChange}
+                              variant="outlined"
+                              InputProps={{ readOnly: viewOnly }}
+                            >
+                              <MenuItem value={CustomerStatus.ACTIVE}>Ativo</MenuItem>
+                              <MenuItem value={CustomerStatus.INACTIVE}>Inativo</MenuItem>
+                              <MenuItem value={CustomerStatus.BLOCKED}>Bloqueado</MenuItem>
+                            </TextField>
+                          </Grid>
+                          
+                          {customer.personType === PersonType.PJ && (
+                            <>
+                              <Grid item xs={12} md={4}>
+                                <TextField
+                                  fullWidth
+                                  label="Inscrição Estadual"
+                                  name="stateDocument"
+                                  value={customer.stateDocument}
+                                  onChange={handleChange}
+                                  error={!!errors.stateDocument}
+                                  helperText={errors.stateDocument}
+                                  variant="outlined"
+                                  placeholder="Ex: 123456789"
+                                  InputProps={{ readOnly: viewOnly }}
+                                />
+                              </Grid>
+                              
+                              <Grid item xs={12} md={4}>
+                                <TextField
+                                  fullWidth
+                                  label="Inscrição Municipal"
+                                  name="cityDocument"
+                                  value={customer.cityDocument}
+                                  onChange={handleChange}
+                                  error={!!errors.cityDocument}
+                                  helperText={errors.cityDocument}
+                                  variant="outlined"
+                                  placeholder="Ex: 123456789"
+                                  InputProps={{ readOnly: viewOnly }}
+                                />
+                              </Grid>
+                              
+                              <Grid item xs={12} md={4}>
+                                <TextField
+                                  select
+                                  fullWidth
+                                  label="Regime Tributário"
+                                  name="taxRegime"
+                                  value={customer.taxRegime}
+                                  onChange={handleChange}
+                                  error={!!errors.taxRegime}
+                                  helperText={errors.taxRegime}
+                                  required
+                                  variant="outlined"
+                                  InputProps={{ readOnly: viewOnly }}
+                                >
+                                  <MenuItem value={TaxRegime.SIMPLES}>Simples Nacional</MenuItem>
+                                  <MenuItem value={TaxRegime.MEI}>Microempreendedor Individual</MenuItem>
+                                  <MenuItem value={TaxRegime.PRESUMIDO}>Lucro Presumido</MenuItem>
+                                  <MenuItem value={TaxRegime.REAL}>Lucro Real</MenuItem>
+                                </TextField>
+                              </Grid>
+                            </>
+                          )}
+                          
+                          <Grid item xs={12} md={4}>
+                            <TextField
+                              fullWidth
+                              label="Website"
+                              name="website"
+                              value={customer.website}
+                              onChange={handleChange}
+                              error={!!errors.website}
+                              helperText={errors.website}
+                              variant="outlined"
+                              placeholder="https://www.exemplo.com.br"
+                              InputProps={{ readOnly: viewOnly }}
+                            />
+                          </Grid>
+                        </Grid>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  <div ref={addressesRef}>
+                    <Card
+                      elevation={0}
+                      sx={{
+                        border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
+                        borderRadius: 2,
+                        boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
+                        overflow: 'hidden',
+                        mb: 3
+                      }}
+                    >
+                      <CardContent>
+                        <Typography 
+                          variant="h6" 
+                          gutterBottom 
+                          sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 1,
+                            color: theme.palette.text.primary,
+                            fontWeight: 600,
+                            mb: 3
+                          }}
+                        >
+                          <LocationIcon fontSize="small" color="primary" />
+                          Endereços
+                        </Typography>
+                        
+                        <Grid container spacing={2}>
+                          {customer.addresses.map((address, index) => (
+                            <Grid item xs={12} key={index}>
+                              <Card
+                                elevation={0}
+                                sx={{
+                                  border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
+                                  borderRadius: 2,
+                                  boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
+                                  overflow: 'hidden',
+                                  mb: 2
+                                }}
+                              >
+                                <CardContent>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                    <Typography 
+                                      variant="subtitle1" 
+                                      sx={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: 1,
+                                        color: theme.palette.text.primary,
+                                        fontWeight: 600
+                                      }}
+                                    >
+                                      <HomeIcon fontSize="small" color="primary" />
+                                      Endereço {index + 1}
+                                    </Typography>
+                                    
+                                    {index > 0 && (
+                                      <Button
+                                        variant="outlined"
+                                        color="error"
+                                        size="small"
+                                        startIcon={<DeleteIcon />}
+                                        onClick={() => handleRemoveAddress(index)}
+                                        disabled={viewOnly}
+                                      >
+                                        Remover
+                                      </Button>
+                                    )}
+                                  </Box>
+                                  
+                                  <Grid container spacing={2}>
+                                    <Grid item xs={12} md={4}>
+                                      <TextField
+                                        fullWidth
+                                        label="Rua"
+                                        name={`addresses.${index}.street`}
+                                        value={address.street}
+                                        onChange={handleChange}
+                                        error={!!errors.addresses && !!errors.addresses[index]?.street}
+                                        helperText={errors.addresses && errors.addresses[index]?.street}
+                                        required
+                                        variant="outlined"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={2}>
+                                      <TextField
+                                        fullWidth
+                                        label="Número"
+                                        name={`addresses.${index}.number`}
+                                        value={address.number}
+                                        onChange={handleChange}
+                                        error={!!errors.addresses && !!errors.addresses[index]?.number}
+                                        helperText={errors.addresses && errors.addresses[index]?.number}
+                                        required
+                                        variant="outlined"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={3}>
+                                      <TextField
+                                        fullWidth
+                                        label="Complemento"
+                                        name={`addresses.${index}.complement`}
+                                        value={address.complement}
+                                        onChange={handleChange}
+                                        error={!!errors.addresses && !!errors.addresses[index]?.complement}
+                                        helperText={errors.addresses && errors.addresses[index]?.complement}
+                                        variant="outlined"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={3}>
+                                      <TextField
+                                        fullWidth
+                                        label="Bairro"
+                                        name={`addresses.${index}.district`}
+                                        value={address.district}
+                                        onChange={handleChange}
+                                        error={!!errors.addresses && !!errors.addresses[index]?.district}
+                                        helperText={errors.addresses && errors.addresses[index]?.district}
+                                        required
+                                        variant="outlined"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={2}>
+                                      <TextField
+                                        fullWidth
+                                        label="Cidade"
+                                        name={`addresses.${index}.city`}
+                                        value={address.city}
+                                        onChange={handleChange}
+                                        error={!!errors.addresses && !!errors.addresses[index]?.city}
+                                        helperText={errors.addresses && errors.addresses[index]?.city}
+                                        required
+                                        variant="outlined"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={2}>
+                                      <TextField
+                                        fullWidth
+                                        label="Estado"
+                                        name={`addresses.${index}.state`}
+                                        value={address.state}
+                                        onChange={handleChange}
+                                        error={!!errors.addresses && !!errors.addresses[index]?.state}
+                                        helperText={errors.addresses && errors.addresses[index]?.state}
+                                        required
+                                        variant="outlined"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={3}>
+                                      <TextField
+                                        fullWidth
+                                        label="CEP"
+                                        name={`addresses.${index}.zipCode`}
+                                        value={address.zipCode}
+                                        onChange={handleChange}
+                                        error={!!errors.addresses && !!errors.addresses[index]?.zipCode}
+                                        helperText={errors.addresses && errors.addresses[index]?.zipCode}
+                                        required
+                                        variant="outlined"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={2}>
+                                      <TextField
+                                        fullWidth
+                                        label="País"
+                                        name={`addresses.${index}.country`}
+                                        value={address.country}
+                                        onChange={handleChange}
+                                        error={!!errors.addresses && !!errors.addresses[index]?.country}
+                                        helperText={errors.addresses && errors.addresses[index]?.country}
+                                        required
+                                        variant="outlined"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={3}>
+                                      <TextField
+                                        select
+                                        fullWidth
+                                        label="Tipo de Endereço"
+                                        name={`addresses.${index}.addressType`}
+                                        value={address.addressType}
+                                        onChange={handleChange}
+                                        variant="outlined"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      >
+                                        <MenuItem value="Comercial">Comercial</MenuItem>
+                                        <MenuItem value="Residencial">Residencial</MenuItem>
+                                        <MenuItem value="Entrega">Entrega</MenuItem>
+                                        <MenuItem value="Faturamento">Faturamento</MenuItem>
+                                      </TextField>
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={6}>
+                                      <FormControlLabel
+                                        control={
+                                          <Checkbox
+                                            checked={address.mainAddress}
+                                            onChange={handleChange}
+                                            name={`addresses.${index}.mainAddress`}
+                                            color="primary"
+                                            disabled={viewOnly}
+                                          />
+                                        }
+                                        label="Endereço Principal"
+                                      />
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                      <FormControlLabel
+                                        control={
+                                          <Checkbox
+                                            checked={address.deliveryAddress}
+                                            onChange={handleChange}
+                                            name={`addresses.${index}.deliveryAddress`}
+                                            color="primary"
+                                            disabled={viewOnly}
+                                          />
+                                        }
+                                        label="Endereço de Entrega"
+                                      />
+                                    </Grid>
+                                  </Grid>
+                                </CardContent>
+                              </Card>
+                            </Grid>
+                          ))}
+                          
+                          <Grid item xs={12}>
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                              <Button
+                                variant="outlined"
+                                color="primary"
+                                startIcon={<AddIcon />}
+                                onClick={handleAddAddress}
+                                disabled={viewOnly}
+                              >
+                                Adicionar Endereço
+                              </Button>
+                            </Box>
+                          </Grid>
+                        </Grid>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  <div ref={contactsRef}>
+                    <Card
+                      elevation={0}
+                      sx={{
+                        border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
+                        borderRadius: 2,
+                        boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
+                        overflow: 'hidden',
+                        mb: 3
+                      }}
+                    >
+                      <CardContent>
+                        <Typography 
+                          variant="h6" 
+                          gutterBottom 
+                          sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 1,
+                            color: theme.palette.text.primary,
+                            fontWeight: 600,
+                            mb: 3
+                          }}
+                        >
+                          <ContactPhoneIcon fontSize="small" color="primary" />
+                          Contatos
+                        </Typography>
+                        
+                        <Grid container spacing={2}>
+                          {customer.contacts.map((contact, index) => (
+                            <Grid item xs={12} key={index}>
+                              <Card
+                                elevation={0}
+                                sx={{
+                                  border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
+                                  borderRadius: 2,
+                                  boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
+                                  overflow: 'hidden',
+                                  mb: 2
+                                }}
+                              >
+                                <CardContent>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                    <Typography 
+                                      variant="subtitle1" 
+                                      sx={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: 1,
+                                        color: theme.palette.text.primary,
+                                        fontWeight: 600
+                                      }}
+                                    >
+                                      <ContactPhoneIcon fontSize="small" color="primary" />
+                                      Contato {index + 1}
+                                    </Typography>
+                                    
+                                    {index > 0 && (
+                                      <Button
+                                        variant="outlined"
+                                        color="error"
+                                        size="small"
+                                        startIcon={<DeleteIcon />}
+                                        onClick={() => handleRemoveContact(index)}
+                                        disabled={viewOnly}
+                                      >
+                                        Remover
+                                      </Button>
+                                    )}
+                                  </Box>
+                                  
+                                  <Grid container spacing={2}>
+                                    <Grid item xs={12} md={6}>
+                                      <TextField
+                                        fullWidth
+                                        label="Nome do Contato"
+                                        name={`contacts.${index}.name`}
+                                        value={contact.name}
+                                        onChange={handleChange}
+                                        error={!!errors.contacts && !!errors.contacts[index]?.name}
+                                        helperText={errors.contacts && errors.contacts[index]?.name}
+                                        required={index === 0}
+                                        variant="outlined"
+                                        placeholder="Ex: João da Silva"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                      <TextField
+                                        fullWidth
+                                        label="Cargo"
+                                        name={`contacts.${index}.position`}
+                                        value={contact.position}
+                                        onChange={handleChange}
+                                        variant="outlined"
+                                        placeholder="Ex: Gerente Financeiro"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={4}>
+                                      <TextField
+                                        fullWidth
+                                        label="Telefone"
+                                        name={`contacts.${index}.phone`}
+                                        value={contact.phone || ''}
+                                        onChange={handleChange}
+                                        error={!!errors.contacts && !!errors.contacts[index]?.phone}
+                                        helperText={errors.contacts && errors.contacts[index]?.phone}
+                                        required={index === 0}
+                                        variant="outlined"
+                                        placeholder="(00) 0000-0000"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    <Grid item xs={12} md={4}>
+                                      <TextField
+                                        fullWidth
+                                        label="Celular"
+                                        name={`contacts.${index}.mobilePhone`}
+                                        value={contact.mobilePhone || ''}
+                                        onChange={handleChange}
+                                        variant="outlined"
+                                        placeholder="(00) 00000-0000"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    <Grid item xs={12} md={4}>
+                                      <TextField
+                                        fullWidth
+                                        label="Email"
+                                        name={`contacts.${index}.email`}
+                                        value={contact.email || ''}
+                                        onChange={handleChange}
+                                        error={!!errors.contacts && !!errors.contacts[index]?.email}
+                                        helperText={errors.contacts && errors.contacts[index]?.email}
+                                        variant="outlined"
+                                        placeholder="contato@exemplo.com"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    
+                                    <Grid item xs={12} md={6}>
+                                      <TextField
+                                        fullWidth
+                                        label="Departamento"
+                                        name={`contacts.${index}.department`}
+                                        value={contact.department || ''}
+                                        onChange={handleChange}
+                                        variant="outlined"
+                                        placeholder="Ex: Financeiro"
+                                        InputProps={{ readOnly: viewOnly }}
+                                      />
+                                    </Grid>
+                                    <Grid item xs={12} md={6}>
+                                      <FormControlLabel
+                                        control={
+                                          <Checkbox
+                                            checked={contact.mainContact}
+                                            onChange={handleChange}
+                                            name={`contacts.${index}.mainContact`}
+                                            color="primary"
+                                            disabled={viewOnly}
+                                          />
+                                        }
+                                        label="Contato Principal"
+                                      />
+                                    </Grid>
+                                  </Grid>
+                                </CardContent>
+                              </Card>
+                            </Grid>
+                          ))}
+                          
+                          <Grid item xs={12}>
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                              <Button
+                                variant="outlined"
+                                color="primary"
+                                startIcon={<AddIcon />}
+                                onClick={handleAddContact}
+                                disabled={viewOnly}
+                              >
+                                Adicionar Contato
+                              </Button>
+                            </Box>
+                          </Grid>
+                        </Grid>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  <div ref={financialRef}>
+                    <Card
+                      elevation={0}
+                      sx={{
+                        border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
+                        borderRadius: 2,
+                        boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
+                        overflow: 'hidden',
+                        mb: 3
+                      }}
+                    >
+                      <CardContent>
+                        <Typography 
+                          variant="h6" 
+                          gutterBottom 
+                          sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 1,
+                            color: theme.palette.text.primary,
+                            fontWeight: 600,
+                            mb: 3
+                          }}
+                        >
+                          <MoneyIcon fontSize="small" color="primary" />
+                          Informações Financeiras
+                        </Typography>
+                        
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} md={4}>
+                            <TextField
+                              fullWidth
+                              label="Limite de Crédito (R$)"
+                              name="creditLimit"
+                              type="number"
+                              value={customer.creditLimit}
+                              onChange={handleChange}
+                              error={!!errors.creditLimit}
+                              helperText={errors.creditLimit}
+                              variant="outlined"
+                              inputProps={{ min: 0, step: 0.01, readOnly: viewOnly }}
+                            />
+                          </Grid>
+                          <Grid item xs={12} md={4}>
+                            <TextField
+                              fullWidth
+                              label="Prazo de Pagamento (dias)"
+                              name="paymentTerm"
+                              type="number"
+                              value={customer.paymentTerm}
+                              onChange={handleChange}
+                              error={!!errors.paymentTerm}
+                              helperText={errors.paymentTerm}
+                              variant="outlined"
+                              inputProps={{ min: 0, step: 1, readOnly: viewOnly }}
+                            />
+                          </Grid>
+                          <Grid item xs={12} md={4}>
+                            <TextField
+                              fullWidth
+                              label="Forma de Pagamento"
+                              name="paymentMethodId"
+                              value={customer.paymentMethodId}
+                              onChange={handleChange}
+                              variant="outlined"
+                              placeholder="Selecione a forma de pagamento preferencial"
+                              InputProps={{ readOnly: viewOnly }}
+                            />
+                          </Grid>
+                          
+                          <Grid item xs={12} md={6}>
+                            <TextField
+                              fullWidth
+                              label="Vendedor Responsável"
+                              name="salesmanId"
+                              value={customer.salesmanId}
+                              onChange={handleChange}
+                              variant="outlined"
+                              placeholder="Selecione o vendedor responsável"
+                              InputProps={{ readOnly: viewOnly }}
+                            />
+                          </Grid>
+                          <Grid item xs={12} md={6}>
+                            <TextField
+                              fullWidth
+                              label="Tabela de Preços"
+                              name="priceTableId"
+                              value={customer.priceTableId}
+                              onChange={handleChange}
+                              variant="outlined"
+                              placeholder="Selecione a tabela de preços"
+                              InputProps={{ readOnly: viewOnly }}
+                            />
+                          </Grid>
+                        </Grid>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  <div ref={observationsRef}>
+                    <Card
+                      elevation={0}
+                      sx={{
+                        border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
+                        borderRadius: 2,
+                        boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
+                        overflow: 'hidden',
+                        mb: 3
+                      }}
+                    >
+                      <CardContent>
+                        <Typography 
+                          variant="h6" 
+                          gutterBottom 
+                          sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 1,
+                            color: theme.palette.text.primary,
+                            fontWeight: 600,
+                            mb: 3
+                          }}
+                        >
+                          <DescriptionIcon fontSize="small" color="primary" />
+                          Observações
+                        </Typography>
+                        
+                        <Grid container spacing={2}>
+                          <Grid item xs={12}>
+                            <TextField
+                              fullWidth
+                              label="Observações Gerais"
+                              name="observations"
+                              value={customer.observations}
+                              onChange={handleChange}
+                              multiline
+                              rows={4}
+                              variant="outlined"
+                              placeholder="Informações adicionais sobre o cliente"
+                              InputProps={{ readOnly: viewOnly }}
+                            />
+                          </Grid>
+                          <Grid item xs={12}>
+                            <TextField
+                              fullWidth
+                              label="Observações para Nota Fiscal"
+                              name="fiscalNotes"
+                              value={customer.fiscalNotes}
+                              onChange={handleChange}
+                              multiline
+                              rows={4}
+                              variant="outlined"
+                              placeholder="Informações que devem aparecer nas notas fiscais"
+                              InputProps={{ readOnly: viewOnly }}
+                            />
+                          </Grid>
+                        </Grid>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  {/* Botões */}
+                  {!viewOnly && (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 4 }}>
+                      <Button
+                        variant="outlined"
+                        color="inherit"
+                        onClick={handleCancel}
+                        startIcon={<CancelIcon />}
+                        disabled={loading}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="contained"
+                        color="primary"
+                        startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
+                        disabled={loading}
+                        sx={{
+                          fontWeight: 600,
+                          boxShadow: 2,
+                          borderRadius: 2,
+                          px: 3,
+                          py: 1.2
+                        }}
+                      >
+                        {loading ? 'Salvando...' : 'Salvar'}
+                      </Button>
+                    </Box>
+                  )}
+                  
+                  {viewOnly && (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 4 }}>
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        onClick={handleCancel}
+                        startIcon={<ChevronLeftIcon />}
+                      >
+                        Voltar
+                      </Button>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        component={RouterLink}
+                        to={`/customers/edit/${id}`}
+                        startIcon={<EditIcon />}
+                        sx={{
+                          fontWeight: 600,
+                          boxShadow: 2,
+                          borderRadius: 2,
+                          px: 3,
+                          py: 1.2
+                        }}
+                      >
+                        Editar
+                      </Button>
+                    </Box>
+                  )}
+                </Box>
               </Grid>
             </Grid>
-            
-            <Breadcrumbs aria-label="breadcrumb" sx={{ mt: 1 }}>
-              <Link component={RouterLink} to="/dashboard" color="inherit">
-                Dashboard
-              </Link>
-              <Link component={RouterLink} to="/customers" color="inherit">
-                Clientes
-              </Link>
-              <Typography color="text.primary">
-                {viewOnly ? 'Visualizar' : (isEditMode ? 'Editar' : 'Novo')}
-              </Typography>
-            </Breadcrumbs>
-          </Box>
-          
-          <Box component="form" onSubmit={handleSubmit}>
-            <Tabs 
-              value={tabValue} 
-              onChange={handleTabChange} 
-              variant="scrollable" 
-              scrollButtons="auto"
-              aria-label="customer form tabs"
-              sx={{ 
-                borderBottom: 1, 
-                borderColor: 'divider',
-                mb: 2
-              }}
-            >
-              <Tab icon={<PersonIcon />} label="Dados Básicos" id="customer-tab-0" aria-controls="customer-tabpanel-0" />
-              <Tab icon={<LocationIcon />} label="Endereços" id="customer-tab-1" aria-controls="customer-tabpanel-1" />
-              <Tab icon={<ContactPhoneIcon />} label="Contatos" id="customer-tab-2" aria-controls="customer-tabpanel-2" />
-              <Tab icon={<MoneyIcon />} label="Financeiro" id="customer-tab-3" aria-controls="customer-tabpanel-3" />
-              <Tab icon={<DescriptionIcon />} label="Observações" id="customer-tab-4" aria-controls="customer-tabpanel-4" />
-            </Tabs>
-            
-            <TabPanel value={tabValue} index={0}>
-              <Card
-                elevation={0}
-                sx={{
-                  border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
-                  borderRadius: 2,
-                  boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
-                  overflow: 'hidden'
-                }}
-              >
-                <CardContent>
-                  <Typography 
-                    variant="h6" 
-                    gutterBottom 
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 1,
-                      color: theme.palette.text.primary,
-                      fontWeight: 600,
-                      mb: 3
-                    }}
-                  >
-                    <PersonIcon fontSize="small" color="primary" />
-                    Informações Básicas
-                  </Typography>
-                  
-                  <Grid container spacing={2}>
-                    <Grid item xs={12} md={2}>
-                      <TextField
-                        select
-                        fullWidth
-                        label="Tipo de Pessoa"
-                        name="personType"
-                        value={customer.personType}
-                        onChange={handleChange}
-                        error={!!errors.personType}
-                        helperText={errors.personType}
-                        required
-                        variant="outlined"
-                        InputProps={{ readOnly: viewOnly }}
-                      >
-                        <MenuItem value={PersonType.PF}>Pessoa Física</MenuItem>
-                        <MenuItem value={PersonType.PJ}>Pessoa Jurídica</MenuItem>
-                      </TextField>
-                    </Grid>
-                    
-                    <Grid item xs={12} md={customer.personType === PersonType.PF ? 6 : 5}>
-                      <TextField
-                        fullWidth
-                        label={customer.personType === PersonType.PF ? "Nome Completo" : "Razão Social"}
-                        name="name"
-                        value={customer.name}
-                        onChange={handleChange}
-                        error={!!errors.name}
-                        helperText={errors.name}
-                        required
-                        variant="outlined"
-                        placeholder={customer.personType === PersonType.PF ? "Ex: João da Silva" : "Ex: Empresa XYZ Ltda"}
-                        InputProps={{ readOnly: viewOnly }}
-                      />
-                    </Grid>
-                    
-                    {customer.personType === PersonType.PJ && (
-                      <Grid item xs={12} md={5}>
-                        <TextField
-                          fullWidth
-                          label="Nome Fantasia"
-                          name="tradeName"
-                          value={customer.tradeName}
-                          onChange={handleChange}
-                          variant="outlined"
-                          placeholder="Ex: XYZ Comércio"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                    )}
-                    
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        fullWidth
-                        label={customer.personType === PersonType.PF ? "CPF" : "CNPJ"}
-                        name="document"
-                        value={customer.document}
-                        onChange={handleChange}
-                        error={!!errors.document}
-                        helperText={errors.document}
-                        required
-                        variant="outlined"
-                        placeholder={customer.personType === PersonType.PF ? "000.000.000-00" : "00.000.000/0000-00"}
-                        inputProps={{ maxLength: customer.personType === PersonType.PF ? 14 : 18, readOnly: viewOnly }}
-                      />
-                    </Grid>
-                    
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        select
-                        fullWidth
-                        label="Tipo de Cliente"
-                        name="customerType"
-                        value={customer.customerType}
-                        onChange={handleChange}
-                        error={!!errors.customerType}
-                        helperText={errors.customerType}
-                        required
-                        variant="outlined"
-                        InputProps={{ readOnly: viewOnly }}
-                      >
-                        <MenuItem value={CustomerType.FINAL}>Consumidor Final</MenuItem>
-                        <MenuItem value={CustomerType.RESELLER}>Revendedor</MenuItem>
-                        <MenuItem value={CustomerType.WHOLESALE}>Atacadista</MenuItem>
-                      </TextField>
-                    </Grid>
-                    
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        select
-                        fullWidth
-                        label="Status"
-                        name="status"
-                        value={customer.status}
-                        onChange={handleChange}
-                        variant="outlined"
-                        InputProps={{ readOnly: viewOnly }}
-                      >
-                        <MenuItem value={CustomerStatus.ACTIVE}>Ativo</MenuItem>
-                        <MenuItem value={CustomerStatus.INACTIVE}>Inativo</MenuItem>
-                        <MenuItem value={CustomerStatus.BLOCKED}>Bloqueado</MenuItem>
-                      </TextField>
-                    </Grid>
-                    
-                    {customer.personType === PersonType.PJ && (
-                      <>
-                        <Grid item xs={12} md={4}>
-                          <TextField
-                            fullWidth
-                            label="Inscrição Estadual"
-                            name="stateDocument"
-                            value={customer.stateDocument}
-                            onChange={handleChange}
-                            error={!!errors.stateDocument}
-                            helperText={errors.stateDocument}
-                            variant="outlined"
-                            placeholder="Ex: 123456789"
-                            InputProps={{ readOnly: viewOnly }}
-                          />
-                        </Grid>
-                        
-                        <Grid item xs={12} md={4}>
-                          <TextField
-                            fullWidth
-                            label="Inscrição Municipal"
-                            name="cityDocument"
-                            value={customer.cityDocument}
-                            onChange={handleChange}
-                            error={!!errors.cityDocument}
-                            helperText={errors.cityDocument}
-                            variant="outlined"
-                            placeholder="Ex: 123456789"
-                            InputProps={{ readOnly: viewOnly }}
-                          />
-                        </Grid>
-                        
-                        <Grid item xs={12} md={4}>
-                          <TextField
-                            select
-                            fullWidth
-                            label="Regime Tributário"
-                            name="taxRegime"
-                            value={customer.taxRegime}
-                            onChange={handleChange}
-                            error={!!errors.taxRegime}
-                            helperText={errors.taxRegime}
-                            required
-                            variant="outlined"
-                            InputProps={{ readOnly: viewOnly }}
-                          >
-                            <MenuItem value={TaxRegime.SIMPLES}>Simples Nacional</MenuItem>
-                            <MenuItem value={TaxRegime.MEI}>MEI</MenuItem>
-                            <MenuItem value={TaxRegime.PRESUMIDO}>Lucro Presumido</MenuItem>
-                            <MenuItem value={TaxRegime.REAL}>Lucro Real</MenuItem>
-                          </TextField>
-                        </Grid>
-                        
-                        <Grid item xs={12} md={4}>
-                          <TextField
-                            fullWidth
-                            label="SUFRAMA"
-                            name="suframa"
-                            value={customer.suframa}
-                            onChange={handleChange}
-                            variant="outlined"
-                            placeholder="Ex: 123456789"
-                            InputProps={{ readOnly: viewOnly }}
-                          />
-                        </Grid>
-                      </>
-                    )}
-                    
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        fullWidth
-                        label="Website"
-                        name="website"
-                        value={customer.website}
-                        onChange={handleChange}
-                        error={!!errors.website}
-                        helperText={errors.website}
-                        variant="outlined"
-                        placeholder="Ex: www.empresa.com.br"
-                        InputProps={{ readOnly: viewOnly }}
-                      />
-                    </Grid>
-                    
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        fullWidth
-                        label="Código de Referência"
-                        name="referenceCode"
-                        value={customer.referenceCode}
-                        onChange={handleChange}
-                        variant="outlined"
-                        placeholder="Ex: CLI001"
-                        InputProps={{ readOnly: viewOnly }}
-                      />
-                    </Grid>
-                    
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        fullWidth
-                        label="Código Externo"
-                        name="externalCode"
-                        value={customer.externalCode}
-                        onChange={handleChange}
-                        variant="outlined"
-                        placeholder="Ex: EXT001"
-                        InputProps={{ readOnly: viewOnly }}
-                      />
-                    </Grid>
-                  </Grid>
-                </CardContent>
-              </Card>
-            </TabPanel>
-            
-            <TabPanel value={tabValue} index={1}>
-              {customer.addresses.map((address, index) => (
-                <Card
-                  key={index}
-                  elevation={0}
-                  sx={{
-                    border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
-                    borderRadius: 2,
-                    boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
-                    overflow: 'hidden',
-                    mb: 3
-                  }}
-                >
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                      <Typography 
-                        variant="h6" 
-                        sx={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 1,
-                          color: theme.palette.text.primary,
-                          fontWeight: 600
-                        }}
-                      >
-                        <LocationIcon fontSize="small" color="primary" />
-                        Endereço {index + 1}
-                      </Typography>
-                      
-                      {index > 0 && (
-                        <Button
-                          variant="outlined"
-                          color="error"
-                          size="small"
-                          startIcon={<DeleteIcon />}
-                          onClick={() => handleRemoveAddress(index)}
-                          disabled={viewOnly}
-                        >
-                          Remover
-                        </Button>
-                      )}
-                    </Box>
-                    
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} md={4}>
-                        <TextField
-                          fullWidth
-                          label="Rua"
-                          name={`addresses.${index}.street`}
-                          value={address.street}
-                          onChange={handleChange}
-                          error={!!errors.addresses && !!errors.addresses[index]?.street}
-                          helperText={errors.addresses && errors.addresses[index]?.street}
-                          required
-                          variant="outlined"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} md={2}>
-                        <TextField
-                          fullWidth
-                          label="Número"
-                          name={`addresses.${index}.number`}
-                          value={address.number}
-                          onChange={handleChange}
-                          error={!!errors.addresses && !!errors.addresses[index]?.number}
-                          helperText={errors.addresses && errors.addresses[index]?.number}
-                          required
-                          variant="outlined"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} md={3}>
-                        <TextField
-                          fullWidth
-                          label="Complemento"
-                          name={`addresses.${index}.complement`}
-                          value={address.complement}
-                          onChange={handleChange}
-                          error={!!errors.addresses && !!errors.addresses[index]?.complement}
-                          helperText={errors.addresses && errors.addresses[index]?.complement}
-                          variant="outlined"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} md={3}>
-                        <TextField
-                          fullWidth
-                          label="Bairro"
-                          name={`addresses.${index}.district`}
-                          value={address.district}
-                          onChange={handleChange}
-                          error={!!errors.addresses && !!errors.addresses[index]?.district}
-                          helperText={errors.addresses && errors.addresses[index]?.district}
-                          required
-                          variant="outlined"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} md={2}>
-                        <TextField
-                          fullWidth
-                          label="Cidade"
-                          name={`addresses.${index}.city`}
-                          value={address.city}
-                          onChange={handleChange}
-                          error={!!errors.addresses && !!errors.addresses[index]?.city}
-                          helperText={errors.addresses && errors.addresses[index]?.city}
-                          required
-                          variant="outlined"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} md={2}>
-                        <TextField
-                          fullWidth
-                          label="Estado"
-                          name={`addresses.${index}.state`}
-                          value={address.state}
-                          onChange={handleChange}
-                          error={!!errors.addresses && !!errors.addresses[index]?.state}
-                          helperText={errors.addresses && errors.addresses[index]?.state}
-                          required
-                          variant="outlined"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} md={3}>
-                        <TextField
-                          fullWidth
-                          label="CEP"
-                          name={`addresses.${index}.zipCode`}
-                          value={address.zipCode}
-                          onChange={handleChange}
-                          error={!!errors.addresses && !!errors.addresses[index]?.zipCode}
-                          helperText={errors.addresses && errors.addresses[index]?.zipCode}
-                          required
-                          variant="outlined"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} md={2}>
-                        <TextField
-                          fullWidth
-                          label="País"
-                          name={`addresses.${index}.country`}
-                          value={address.country}
-                          onChange={handleChange}
-                          error={!!errors.addresses && !!errors.addresses[index]?.country}
-                          helperText={errors.addresses && errors.addresses[index]?.country}
-                          required
-                          variant="outlined"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} md={3}>
-                        <TextField
-                          select
-                          fullWidth
-                          label="Tipo de Endereço"
-                          name={`addresses.${index}.addressType`}
-                          value={address.addressType}
-                          onChange={handleChange}
-                          variant="outlined"
-                          InputProps={{ readOnly: viewOnly }}
-                        >
-                          <MenuItem value="Comercial">Comercial</MenuItem>
-                          <MenuItem value="Residencial">Residencial</MenuItem>
-                          <MenuItem value="Entrega">Entrega</MenuItem>
-                          <MenuItem value="Faturamento">Faturamento</MenuItem>
-                        </TextField>
-                      </Grid>
-                      
-                      <Grid item xs={12} md={6}>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={address.mainAddress}
-                              onChange={handleChange}
-                              name={`addresses.${index}.mainAddress`}
-                              color="primary"
-                              disabled={viewOnly}
-                            />
-                          }
-                          label="Endereço Principal"
-                        />
-                      </Grid>
-                      <Grid item xs={12} md={6}>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={address.deliveryAddress}
-                              onChange={handleChange}
-                              name={`addresses.${index}.deliveryAddress`}
-                              color="primary"
-                              disabled={viewOnly}
-                            />
-                          }
-                          label="Endereço de Entrega"
-                        />
-                      </Grid>
-                    </Grid>
-                  </CardContent>
-                </Card>
-              ))}
-              
-              <Box sx={{ mt: 2, mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                <Button
-                  variant="outlined"
-                  color="primary"
-                  startIcon={<AddIcon />}
-                  onClick={handleAddAddress}
-                  disabled={viewOnly}
-                >
-                  Adicionar Endereço
-                </Button>
-              </Box>
-            </TabPanel>
-            
-            <TabPanel value={tabValue} index={2}>
-              {customer.contacts.map((contact, index) => (
-                <Card
-                  key={index}
-                  elevation={0}
-                  sx={{
-                    border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
-                    borderRadius: 2,
-                    boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
-                    overflow: 'hidden',
-                    mb: 3
-                  }}
-                >
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                      <Typography 
-                        variant="h6" 
-                        sx={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 1,
-                          color: theme.palette.text.primary,
-                          fontWeight: 600
-                        }}
-                      >
-                        <ContactPhoneIcon fontSize="small" color="primary" />
-                        Contato {index + 1}
-                      </Typography>
-                      
-                      {index > 0 && (
-                        <Button
-                          variant="outlined"
-                          color="error"
-                          size="small"
-                          startIcon={<DeleteIcon />}
-                          onClick={() => handleRemoveContact(index)}
-                          disabled={viewOnly}
-                        >
-                          Remover
-                        </Button>
-                      )}
-                    </Box>
-                    
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} md={6}>
-                        <TextField
-                          fullWidth
-                          label="Nome do Contato"
-                          name={`contacts.${index}.name`}
-                          value={contact.name}
-                          onChange={handleChange}
-                          error={!!errors.contacts && !!errors.contacts[index]?.name}
-                          helperText={errors.contacts && errors.contacts[index]?.name}
-                          required={index === 0}
-                          variant="outlined"
-                          placeholder="Ex: João da Silva"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      <Grid item xs={12} md={6}>
-                        <TextField
-                          fullWidth
-                          label="Cargo"
-                          name={`contacts.${index}.position`}
-                          value={contact.position}
-                          onChange={handleChange}
-                          variant="outlined"
-                          placeholder="Ex: Gerente Financeiro"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} md={4}>
-                        <TextField
-                          fullWidth
-                          label="Telefone"
-                          name={`contacts.${index}.phone`}
-                          value={contact.phone || ''}
-                          onChange={handleChange}
-                          error={!!errors.contacts && !!errors.contacts[index]?.phone}
-                          helperText={errors.contacts && errors.contacts[index]?.phone}
-                          required={index === 0}
-                          variant="outlined"
-                          placeholder="(00) 0000-0000"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      <Grid item xs={12} md={4}>
-                        <TextField
-                          fullWidth
-                          label="Celular"
-                          name={`contacts.${index}.mobilePhone`}
-                          value={contact.mobilePhone || ''}
-                          onChange={handleChange}
-                          variant="outlined"
-                          placeholder="(00) 00000-0000"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      <Grid item xs={12} md={4}>
-                        <TextField
-                          fullWidth
-                          label="Email"
-                          name={`contacts.${index}.email`}
-                          value={contact.email || ''}
-                          onChange={handleChange}
-                          error={!!errors.contacts && !!errors.contacts[index]?.email}
-                          helperText={errors.contacts && errors.contacts[index]?.email}
-                          variant="outlined"
-                          placeholder="contato@exemplo.com"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      
-                      <Grid item xs={12} md={6}>
-                        <TextField
-                          fullWidth
-                          label="Departamento"
-                          name={`contacts.${index}.department`}
-                          value={contact.department || ''}
-                          onChange={handleChange}
-                          variant="outlined"
-                          placeholder="Ex: Financeiro"
-                          InputProps={{ readOnly: viewOnly }}
-                        />
-                      </Grid>
-                      <Grid item xs={12} md={6}>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={contact.mainContact}
-                              onChange={handleChange}
-                              name={`contacts.${index}.mainContact`}
-                              color="primary"
-                              disabled={viewOnly}
-                            />
-                          }
-                          label="Contato Principal"
-                        />
-                      </Grid>
-                    </Grid>
-                  </CardContent>
-                </Card>
-              ))}
-              
-              <Box sx={{ mt: 2, mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                <Button
-                  variant="outlined"
-                  color="primary"
-                  startIcon={<AddIcon />}
-                  onClick={handleAddContact}
-                  disabled={viewOnly}
-                >
-                  Adicionar Contato
-                </Button>
-              </Box>
-            </TabPanel>
-            
-            <TabPanel value={tabValue} index={3}>
-              <Card
-                elevation={0}
-                sx={{
-                  border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
-                  borderRadius: 2,
-                  boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
-                  overflow: 'hidden'
-                }}
-              >
-                <CardContent>
-                  <Typography 
-                    variant="h6" 
-                    gutterBottom 
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 1,
-                      color: theme.palette.text.primary,
-                      fontWeight: 600,
-                      mb: 3
-                    }}
-                  >
-                    <MoneyIcon fontSize="small" color="primary" />
-                    Informações Financeiras
-                  </Typography>
-                  
-                  <Grid container spacing={2}>
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        fullWidth
-                        label="Limite de Crédito (R$)"
-                        name="creditLimit"
-                        type="number"
-                        value={customer.creditLimit}
-                        onChange={handleChange}
-                        error={!!errors.creditLimit}
-                        helperText={errors.creditLimit}
-                        variant="outlined"
-                        inputProps={{ min: 0, step: 0.01, readOnly: viewOnly }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        fullWidth
-                        label="Prazo de Pagamento (dias)"
-                        name="paymentTerm"
-                        type="number"
-                        value={customer.paymentTerm}
-                        onChange={handleChange}
-                        error={!!errors.paymentTerm}
-                        helperText={errors.paymentTerm}
-                        variant="outlined"
-                        inputProps={{ min: 0, step: 1, readOnly: viewOnly }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        fullWidth
-                        label="Forma de Pagamento"
-                        name="paymentMethodId"
-                        value={customer.paymentMethodId}
-                        onChange={handleChange}
-                        variant="outlined"
-                        placeholder="Selecione a forma de pagamento preferencial"
-                        InputProps={{ readOnly: viewOnly }}
-                      />
-                    </Grid>
-                    
-                    <Grid item xs={12} md={6}>
-                      <TextField
-                        fullWidth
-                        label="Vendedor Responsável"
-                        name="salesmanId"
-                        value={customer.salesmanId}
-                        onChange={handleChange}
-                        variant="outlined"
-                        placeholder="Selecione o vendedor responsável"
-                        InputProps={{ readOnly: viewOnly }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <TextField
-                        fullWidth
-                        label="Tabela de Preços"
-                        name="priceTableId"
-                        value={customer.priceTableId}
-                        onChange={handleChange}
-                        variant="outlined"
-                        placeholder="Selecione a tabela de preços"
-                        InputProps={{ readOnly: viewOnly }}
-                      />
-                    </Grid>
-                  </Grid>
-                </CardContent>
-              </Card>
-            </TabPanel>
-            
-            <TabPanel value={tabValue} index={4}>
-              <Card
-                elevation={0}
-                sx={{
-                  border: `1px solid ${alpha(theme.palette.divider, 0.15)}`,
-                  borderRadius: 2,
-                  boxShadow: `0 1px 3px 0 ${alpha(theme.palette.divider, 0.05)}`,
-                  overflow: 'hidden'
-                }}
-              >
-                <CardContent>
-                  <Typography 
-                    variant="h6" 
-                    gutterBottom 
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      gap: 1,
-                      color: theme.palette.text.primary,
-                      fontWeight: 600,
-                      mb: 3
-                    }}
-                  >
-                    <DescriptionIcon fontSize="small" color="primary" />
-                    Observações
-                  </Typography>
-                  
-                  <Grid container spacing={2}>
-                    <Grid item xs={12}>
-                      <TextField
-                        fullWidth
-                        label="Observações Gerais"
-                        name="observations"
-                        value={customer.observations}
-                        onChange={handleChange}
-                        multiline
-                        rows={4}
-                        variant="outlined"
-                        placeholder="Informações adicionais sobre o cliente"
-                        InputProps={{ readOnly: viewOnly }}
-                      />
-                    </Grid>
-                    <Grid item xs={12}>
-                      <TextField
-                        fullWidth
-                        label="Observações para Nota Fiscal"
-                        name="fiscalNotes"
-                        value={customer.fiscalNotes}
-                        onChange={handleChange}
-                        multiline
-                        rows={4}
-                        variant="outlined"
-                        placeholder="Informações que devem aparecer nas notas fiscais"
-                        InputProps={{ readOnly: viewOnly }}
-                      />
-                    </Grid>
-                  </Grid>
-                </CardContent>
-              </Card>
-            </TabPanel>
-            
-            {/* Botões */}
-            {!viewOnly && (
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 4 }}>
-                <Button
-                  variant="outlined"
-                  color="inherit"
-                  onClick={handleCancel}
-                  startIcon={<CancelIcon />}
-                  disabled={loading}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  color="primary"
-                  startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
-                  disabled={loading}
-                  sx={{
-                    fontWeight: 600,
-                    boxShadow: 2,
-                    borderRadius: 2,
-                    px: 3,
-                    py: 1.2
-                  }}
-                >
-                  {loading ? 'Salvando...' : 'Salvar'}
-                </Button>
-              </Box>
-            )}
-            
-            {viewOnly && (
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 4 }}>
-                <Button
-                  variant="outlined"
-                  color="primary"
-                  onClick={handleCancel}
-                  startIcon={<ChevronLeftIcon />}
-                >
-                  Voltar
-                </Button>
-              </Box>
-            )}
-          </Box>
-        </motion.div>
+          </>
+        )}
       </Container>
     </DashboardLayout>
   );
